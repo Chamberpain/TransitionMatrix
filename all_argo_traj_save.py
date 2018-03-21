@@ -3,6 +3,8 @@ from time import sleep
 import os
 import pickle
 
+"This file recursively searches the ifremer DAC for traj files and makes a list for download. After I wrote this, I learned that there is a list maintained on the server of this exact thing, so it is essentially a waste. I will save this for posterity in case I need a similar script again"
+
 class argo_traj_data:
 	def __init__(self):
 		ftp_link = 'ftp.ifremer.fr'
