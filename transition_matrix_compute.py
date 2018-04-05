@@ -40,13 +40,13 @@ class argo_traj_data:
 		try:
 			self.df_transition = pd.read_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 		except IOError:
-			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,
+			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
 		try:
 			self.transition_matrix = np.load('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.dat')
 		except IOError:
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
-			self.recompile_transition_matrix()
+			self.recompile_transition_matrix(dump=False)
 		try:
 			self.w = np.load("w.dat")
 		except:
@@ -98,28 +98,31 @@ class argo_traj_data:
 
 	def recompile_transition_matrix(self,dump=True):
 		self.transition_matrix = np.identity(len(self.total_list))
-		self.number_list = np.zeros([len(self.total_list)])
 		k = len(self.df_transition['start bin'].unique())
 		for n,ii in enumerate(self.df_transition['start bin'].unique()):
-		    print 'made it through ',n,' bins. ',(k-n),' remaining'
-		    ii_index = self.total_list.index(list(ii))
-		    date_span_addition = 0 
-		    frame = self.df_transition[self.df_transition['start bin']==ii]
-		    self.number_list[ii_index]=len(frame)
-		    frame_cut = frame[frame['date span']<=self.date_span_limit]
-		    while frame_cut.empty:
-		    	date_span_addition += 10
-		    	frame_cut = frame[frame['date span']<=(date_span_limit+ date_span_addition)]
-		    	print 'we need to increase the time delta, because we have an error'
-		    	print 'we have increased the date_span addition by ',date_span_addition
-		    self.transition_matrix[ii_index,ii_index]=(len(frame)-len(frame_cut))/float(len(frame))
-		    for qq in frame_cut['end bin'].unique():
-		        qq_index = self.total_list.index(list(qq))
-		        self.transition_matrix[qq_index,ii_index]=len(frame_cut[frame_cut['end bin']==qq])/float(len(frame))
-		    if abs(sum(self.transition_matrix[:,ii_index])-1)>0.01 :
-		        print 'Something went wrong and the transition doesnt add up'
-		        print sum(self.transition_matrix[:,ii_index])
-		        raise
+			print 'made it through ',n,' bins. ',(k-n),' remaining'
+			ii_index = self.total_list.index(list(ii))
+			date_span_addition = 0 
+			frame = self.df_transition[self.df_transition['start bin']==ii]
+			frame_cut = frame[frame['date span']<=self.date_span_limit]
+			if not frame_cut.empty:
+				self.transition_matrix[ii_index,ii_index]=(len(frame)-len(frame_cut))/float(len(frame))
+				for qq in frame_cut['end bin'].unique():
+					qq_index = self.total_list.index(list(qq))
+					self.transition_matrix[qq_index,ii_index]=len(frame_cut[frame_cut['end bin']==qq])/float(len(frame))
+			else:
+				for qq in frame['end bin'].unique():
+					qq_index = self.total_list.index(list(qq))
+					frame_holder = frame[frame['end bin']==qq]
+					percentage_of_floats = len(frame_holder)/float(len(frame))
+					frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
+					frame_holder[frame_holder['time step percent']>1]=1
+					off_diagonal = len(frame_holder)/float(len(frame))*frame_holder['time step percent'].mean()
+					self.transition_matrix[ii_index,ii_index] -= off_diagonal
+					self.transition_matrix[qq_index,ii_index]=off_diagonal
+
+			assert abs(sum(self.transition_matrix[:,ii_index])-1)<0.01 #check to make sure the columns sum to 1 and that total floats are conserved
+
 		if dump:
 			self.transition_matrix.dump('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.dat')
 
@@ -155,7 +158,7 @@ class argo_traj_data:
 		self.plot_array_[self.plot_array_>1000]=1000
 		self.plot_array_ = np.ma.masked_equal(self.plot_array_,0)
 		levs = np.linspace(self.plot_array_.min(),self.plot_array_.max(),50)
-		m.contourf(XX,YY,self.plot_array_.T,levels=levs,cmap=plt.cm.magma)
+		m.pcolormesh(XX,YY,self.plot_array_.T,levels=levs,cmap=plt.cm.magma)
 		plt.title('Data Density',size=30)
 		plt.colorbar(label='Number of float tracks')
 		plt.savefig('number_plot.png')
@@ -184,7 +187,7 @@ class argo_traj_data:
 		transition_plot = np.ma.array((1-transition_plot),mask=self.plot_array_.T==0)
 		trans_max = abs(transition_plot).max()
 		levs = np.linspace(0,trans_max,50)
-		m.contourf(XX,YY,transition_plot,levels=levs) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,levels=levs) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title('1 - diagonal of transition matrix',size=30)
 		plt.savefig('transition_matrix_diag.png')
@@ -206,7 +209,7 @@ class argo_traj_data:
 		    m.drawcoastlines()
 		    XX,YY = m(self.X,self.Y)
 
-		    m.contourf(XX,YY,float_result) # this is a plot for the tendancy of the residence time at a grid cell    
+		    m.pcolormesh(XX,YY,float_result) # this is a plot for the tendancy of the residence time at a grid cell    
 		    lat,lon = self.total_list[ii]
 		    x,y = m(lon,lat)
 		    m.plot(x,y,'y*',markersize=20)
@@ -252,7 +255,7 @@ class argo_traj_data:
 		m.drawmapboundary(fill_color='grey')
 		XX,YY = m(self.X,self.Y)
 		levs = np.linspace(-trans_max,trans_max,50)
-		m.contourf(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title('Dataset Difference (GPS - ARGOS)',size=30)
 		plt.savefig('dataset_difference.png')
@@ -300,7 +303,7 @@ class argo_traj_data:
 		m.drawmapboundary(fill_color='grey')
 		XX,YY = m(self.X,self.Y)
 		levs = np.linspace(-trans_max,trans_max,50)
-		m.contourf(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title('Seasonal Difference (Summer - Winter)',size=30)
 		plt.savefig('seasonal_difference.png')
@@ -351,7 +354,7 @@ class argo_traj_data:
 		float_result = self.transition_vector_to_plottable(float_result.reshape(len(self.total_list)).tolist()[0])
 		float_result = np.log(np.ma.array(float_result,mask=(float_result<0.001)))
 		XX,YY = t(self.X,self.Y)
-		t.contourf(XX,YY,float_result,cmap=plt.cm.Greens)
+		t.pcolormesh(XX,YY,float_result,cmap=plt.cm.Greens)
 		plt.title('SOCCOM Sampling PDF')
 		plt.savefig('soccom_sampling.png')
 		plt.show()
@@ -383,7 +386,7 @@ class argo_traj_data:
 		XX,YY = m(self.X,self.Y)
 		co2_max = co2_vector.max()
 		co2_vector = abs(co2_vector/co2_max) # normalize the co2_vector
-		m.contourf(XX,YY,co2_plot,cmap=plt.cm.PRGn) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,co2_plot,cmap=plt.cm.PRGn) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='CO2 Flux $gm C/m^2/yr$')
 
 		self.w[self.w<0.007]=0
@@ -423,6 +426,6 @@ class argo_traj_data:
 		plt.savefig('optimal_sampling.png')
 		plt.show()
 
-for degree_stepsize in np.arange(0.5,5,0.5):
+for degree_stepsize in np.arange(1,5,0.5):
 	for time_stepsize in np.arange(10,80,5):
 		m = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
