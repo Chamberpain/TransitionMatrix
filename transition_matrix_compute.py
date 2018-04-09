@@ -1,19 +1,29 @@
 import pandas as pd
 import numpy as np
 import pickle
+import matplotlib
+matplotlib.use('agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap,shiftgrid
-from scipy.sparse import csr_matrix
 import matplotlib.colors
 import sys,os
-sys.path.append(os.path.abspath("../"))
-import soccom_proj_settings
-import oceans
+# sys.path.append(os.path.abspath("../"))
+# import soccom_proj_settings
+# import oceans
+import pickle
 import datetime
-import scipy
+import scipy.sparse
 
 "compiles and compares transition matrix from trajectory data. "
 
+def save_sparse_csr(filename, array):
+    np.savez(filename, data=array.data, indices=array.indices,
+             indptr=array.indptr, shape=array.shape)
+
+def load_sparse_csr(filename):
+    loader = np.load(filename)
+    return scipy.sparse.csr_matrix((loader['data'], loader['indices'], loader['indptr']),
+                      shape=loader['shape'])
 
 class argo_traj_data:
 	def __init__(self,degree_bins=2,date_span_limit=40):
@@ -23,7 +33,7 @@ class argo_traj_data:
 		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 
-		self.df = pd.read_pickle('/Users/paulchamberlain/Data/global_argo_traj')
+		self.df = pd.read_pickle('global_argo_traj')
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
 
@@ -43,10 +53,10 @@ class argo_traj_data:
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
 		try:
-			self.transition_matrix = np.load('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.dat')
+			self.transition_matrix = load_sparse_csr('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 		except IOError:
-			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
-			self.recompile_transition_matrix(dump=False)
+			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
+			self.recompile_transition_matrix()
 		try:
 			self.w = np.load("w.dat")
 		except:
@@ -97,20 +107,45 @@ class argo_traj_data:
 			self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
 	def recompile_transition_matrix(self,dump=True):
-		self.transition_matrix = np.identity(len(self.total_list))
+		num_list = []
+		num_list_index = []
+		data_list = []
+		row_list = []
+		column_list = []
 		k = len(self.df_transition['start bin'].unique())
 		for n,ii in enumerate(self.df_transition['start bin'].unique()):
 			print 'made it through ',n,' bins. ',(k-n),' remaining'
 			ii_index = self.total_list.index(list(ii))
 			date_span_addition = 0 
 			frame = self.df_transition[self.df_transition['start bin']==ii]
+			num_list.append(len(frame)) # this is where we save the data density of every cell
+			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
 			frame_cut = frame[frame['date span']<=self.date_span_limit]
 			if not frame_cut.empty:
-				self.transition_matrix[ii_index,ii_index]=(len(frame)-len(frame_cut))/float(len(frame))
+				print 'the frame cut was not empty'
+				test_list = []
+				row_list.append(ii_index)
+				column_list.append(ii_index)
+				data = (len(frame)-len(frame_cut))/float(len(frame))
+				data_list.append(data)
+				test_list.append(data)
 				for qq in frame_cut['end bin'].unique():
 					qq_index = self.total_list.index(list(qq))
-					self.transition_matrix[qq_index,ii_index]=len(frame_cut[frame_cut['end bin']==qq])/float(len(frame))
+					row_list.append(qq_index)
+					column_list.append(ii_index)
+					data = (len(frame_cut[frame_cut['end bin']==qq]))/float(len(frame))
+					data_list.append(data)
+					test_list.append(data)
+				if abs(sum(test_list)-1)>0.01:
+						print 'ding ding ding ding'
+						print '*******************'
+						print 'We have a problem'
+						print sum(test_list)
+						raise
 			else:
+				print 'the frame cut was empy, so I will calculate the scaled dispersion'
+				test_list = []
+				diagonal = 1
 				for qq in frame['end bin'].unique():
 					qq_index = self.total_list.index(list(qq))
 					frame_holder = frame[frame['end bin']==qq]
@@ -118,32 +153,44 @@ class argo_traj_data:
 					frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
 					frame_holder[frame_holder['time step percent']>1]=1
 					off_diagonal = len(frame_holder)/float(len(frame))*frame_holder['time step percent'].mean()
-					self.transition_matrix[ii_index,ii_index] -= off_diagonal
-					self.transition_matrix[qq_index,ii_index]=off_diagonal
+					diagonal -= off_diagonal
+					row_list.append(qq_index)
+					column_list.append(ii_index)
+					data_list.append(off_diagonal)
+					test_list.append(off_diagonal)
 
-			assert abs(sum(self.transition_matrix[:,ii_index])-1)<0.01 #check to make sure the columns sum to 1 and that total floats are conserved
+				row_list.append(ii_index)
+				column_list.append(ii_index)
+				data_list.append(diagonal)
+				test_list.append(diagonal)
+				if abs(sum(test_list)-1)>0.01:
+						print 'ding ding ding ding'
+						print '*******************'
+						print 'We have a problem'
+						print sum(test_list)
+						raise
 
+
+		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
+		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
 		if dump:
-			self.transition_matrix.dump('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.dat')
+			save_sparse_csr('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
+			save_sparse_csr('number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
 
-	def recompile_w(self,number):
-		self.w = csr_matrix(self.transition_matrix)
-		for n in range(number):
-		    print n
-		    self.w = self.w.dot(self.w)
-		self.w = self.w.todense()	
-		self.w.dump('w.dat')
+	def recompile_w(self,number,dump=True):
+		print 'recompiling w matrix, current number is ',number
+		try:
+			self.w = = load_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
+		except IOError:
+			if number == 0:
+				self.w = self.transition_matrix 
+			else:
+				self.recompile_w(number-1,dump=True)
+				self.w = self.w.dot(self.transition_matrix)
+		if dump:
+			save_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)
 
 
-	def number_plot_process(self):
-		self.plot_array_ = np.zeros([len(self.bins_lon),len(self.bins_lat)])
-		for ii in self.df.bins_lat.unique():
-		    print 'working on lat ',ii
-		    i_index = self.bins_lat.index(ii)
-		    for jj in self.df.bins_lon.unique():
-		        j_index = self.bins_lon.index(jj)
-		        self.plot_array_[j_index,i_index] = self.df[(self.df.bins_lon==jj)&(self.df.bins_lat==ii)].Lat.count()
-		self.plot_array_.dump('number_plot_array.dat')
 
 	def number_plot_plot(self):	
 		try:
@@ -216,98 +263,83 @@ class argo_traj_data:
 		    plt.title('1 year particle deployment at '+str(lat)+' lat,'+str(lon)+' lon',size=30)
 		plt.show()
 
-	def gps_argos_compare(self,recompile=False):
-		if recompile:
-			df = self.df_transition
-			df_argos = df[df['position type']=='ARGOS']
-			self.df_transition = df_argos
-			self.recompile_transition_matrix(dump=False)
-			transition_matrix_argos = self.transition_matrix
-			argos_number_list = self.transition_vector_to_plottable(self.number_list)
-			df_gps = df[df['position type']=='GPS']
-			self.df_transition = df_gps
-			self.recompile_transition_matrix(dump=False)
-			transition_matrix_gps = self.transition_matrix
-			gps_number_list = self.transition_vector_to_plottable(self.number_list)
 
-			transition_matrix_argos.dump('transition_matrix_argos')
-			argos_number_list.dump('argos_number_list')
-			transition_matrix_gps.dump('transition_matrix_gps')
-			gps_number_list.dump('gps_number_list')
-
-		else:
-			transition_matrix_argos = np.load('transition_matrix_argos')
-			argos_number_list = np.load('argos_number_list')
-			transition_matrix_gps = np.load('transition_matrix_gps')
-			gps_number_list = np.load('gps_number_list')
-
-		transition_matrix_plot = transition_matrix_argos-transition_matrix_gps
+	def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
+		transition_matrix_plot = matrix_a-matrix_b
 		# transition_matrix_plot[transition_matrix_plot>0.25]=0.25
 		# transition_matrix_plot[transition_matrix_plot<-0.25]=-0.25
 		trans_max = abs(transition_matrix_plot).max()
-		k = np.diagonal(transition_matrix_plot)
+		k = np.diagonal(transition_matrix_plot.todense())
 		transition_plot = self.transition_vector_to_plottable(k)
-		transition_plot = np.ma.array(transition_plot,mask=(gps_number_list==0)|(argos_number_list==0))
+		num_matrix_a = self.transition_vector_to_plottable(np.diagonal(num_matrix_a.todense()))
+		num_matrix_b = self.transition_vector_to_plottable(np.diagonal(num_matrix_b.todense()))
+		transition_plot = np.ma.array(transition_plot,mask=(num_matrix_a==0)|(num_matrix_b==0))
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
 		m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		m.drawmapboundary(fill_color='grey')
 		XX,YY = m(self.X,self.Y)
-		levs = np.linspace(-trans_max,trans_max,50)
-		m.pcolormesh(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,vmin=-trans_max,vmax=trans_max,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
-		plt.title('Dataset Difference (GPS - ARGOS)',size=30)
-		plt.savefig('dataset_difference.png')
-		plt.show()
+		plt.title(title,size=30)
+		plt.savefig(save_name)
+		plt.close()
 
 
-	def seasonal_compare(self,recompile=False):
-		if recompile:
+	def gps_argos_compare(self):
+		try:
+			transition_matrix_argos = load_sparse_csr('transition_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			number_matrix_argos = load_sparse_csr('number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			transition_matrix_gps = load_sparse_csr('transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			number_matrix_gps = load_sparse_csr('number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+		except IOError:
+			print 'the gps and argos transition matrices could not be loaded and will be recompiled'
+			df = self.df_transition
+			df_argos = df[df['position type']=='ARGOS']
+			self.df_transition = df_argos
+			self.recompile_transition_matrix(dump=False)
+			transition_matrix_argos = self.transition_matrix
+			number_matrix_argos = self.number_matrix
+			df_gps = df[df['position type']=='GPS']
+			self.df_transition = df_gps
+			self.recompile_transition_matrix(dump=False)
+			transition_matrix_gps = self.transition_matrix
+			number_matrix_gps = self.number_matrix
+			save_sparse_csr('transition_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_argos)
+			save_sparse_csr('number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_argos)
+			save_sparse_csr('transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_gps)
+			save_sparse_csr('number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_gps)
+		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+
+
+
+	def seasonal_compare(self):
+		try:
+			transition_matrix_summer = load_sparse_csr('transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			number_matrix_summer = load_sparse_csr('number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			transition_matrix_winter = load_sparse_csr('transition_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			number_matrix_winter = load_sparse_csr('number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+		except IOError:
+			print 'the summer and winter transition matrices could not be loaded and will be recompiled'
 			df = self.df_transition
 			df_winter = df[df.date.dt.month.isin([11,12,1,2])]
 			self.df_transition = df_winter
 			self.recompile_transition_matrix(dump=False)
 			transition_matrix_winter = self.transition_matrix
-			winter_number_list = self.transition_vector_to_plottable(self.number_list)
+			number_matrix_winter = self.number_matrix
 			df_summer = df[df.date.dt.month.isin([5,6,7,8])]
 			self.df_transition = df_summer
 			self.recompile_transition_matrix(dump=False)
 			transition_matrix_summer = self.transition_matrix
-			summer_number_list = self.transition_vector_to_plottable(self.number_list)
+			number_matrix_summer = self.number_matrix
 
-			transition_matrix_winter.dump('transition_matrix_winter.dat')
-			winter_number_list.dump('winter_number_list.dat')
-			transition_matrix_summer.dump('transition_matrix_summer.dat')
-			summer_number_list.dump('summer_number_list')
+			save_sparse_csr('transition_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_winter)
+			save_sparse_csr('number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_winter)
+			save_sparse_csr('transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_summer)
+			save_sparse_csr('number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_summer)
+		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
-		else:
-			transition_matrix_winter = np.load('transition_matrix_winter.dat')
-			winter_number_list = np.load('winter_number_list.dat')
-			transition_matrix_summer = np.load('transition_matrix_summer.dat')
-			summer_number_list = np.load('summer_number_list')
-
-		transition_matrix_plot = transition_matrix_winter-transition_matrix_summer
-		trans_max = abs(transition_matrix_plot).max()
-
-		# transition_matrix_plot[transition_matrix_plot>0.5]=0.5
-		# transition_matrix_plot[transition_matrix_plot<-0.5]=-0.5
-
-		k = np.diagonal(transition_matrix_plot)
-		transition_plot = self.transition_vector_to_plottable(k)
-		transition_plot = np.ma.array(transition_plot,mask=(winter_number_list==0)|(summer_number_list==0))
-		plt.figure(figsize=(10,10))
-		m = Basemap(projection='cyl',fix_aspect=False,)
-		m.fillcontinents(color='coral',lake_color='aqua')
-		m.drawcoastlines()
-		m.drawmapboundary(fill_color='grey')
-		XX,YY = m(self.X,self.Y)
-		levs = np.linspace(-trans_max,trans_max,50)
-		m.pcolormesh(XX,YY,transition_plot,levels=levs,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
-		plt.colorbar(label='% particles dispersed')
-		plt.title('Seasonal Difference (Summer - Winter)',size=30)
-		plt.savefig('seasonal_difference.png')
-		plt.show()
 
 	def find_nearest(self,array,value):
 	    idx = (np.abs(array-value)).argmin()
@@ -315,7 +347,7 @@ class argo_traj_data:
 
 	def get_latest_soccom_float_locations(self,plot=False):
 		df = pd.read_pickle(soccom_proj_settings.soccom_drifter_file)
-		df['Lon']=oceans.wrap_lon180(df['Lon'])
+		# df['Lon']=oceans.wrap_lon180(df['Lon'])
 		frames = []
 		for cruise in df.Cruise.unique():                            
 			df_holder = df[df.Cruise==cruise]
@@ -426,6 +458,10 @@ class argo_traj_data:
 		plt.savefig('optimal_sampling.png')
 		plt.show()
 
-for degree_stepsize in np.arange(1,5,0.5):
-	for time_stepsize in np.arange(10,80,5):
-		m = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
+if __name__ == "__main__":
+	degree_stepsize = float(sys.argv[1])
+	print 'degree stepsize is ',degree_stepsize
+	for time_stepsize in np.arange(10,80,20):
+		print 'time stepsize is ',time_stepsize
+		traj_class = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
+		traj_class.seasonal_compare()
