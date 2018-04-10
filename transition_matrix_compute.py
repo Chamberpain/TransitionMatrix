@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap,shiftgrid
 import matplotlib.colors
 import sys,os
+from collections import OrderedDict
 # sys.path.append(os.path.abspath("../"))
 # import soccom_proj_settings
 # import oceans
@@ -15,6 +16,8 @@ import datetime
 import scipy.sparse
 
 "compiles and compares transition matrix from trajectory data. "
+
+
 
 def save_sparse_csr(filename, array):
     np.savez(filename, data=array.data, indices=array.indices,
@@ -57,11 +60,7 @@ class argo_traj_data:
 		except IOError:
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
-		try:
-			self.w = np.load("w.dat")
-		except:
-			print 'could not load w'
-			pass
+
 
 	def recompile_transition_df(self,dump=True):
 		"""
@@ -71,47 +70,56 @@ class argo_traj_data:
 		"""
 		start_bin_list = []
 		final_bin_list = []
-		date_span_list = []
-		final_date_list = []
+		start_date_list = []
 		position_type_list = []
+		time_delta_list = np.arange(10,150,15)
 		k = len(self.df.Cruise.unique())
-		for n,cruise in enumerate(self.df.Cruise.unique()):
-		    print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
-		    print 'start bin list is ',len(start_bin_list),' long'
-		    mask = self.df.Cruise==cruise
-		    df_holder = self.df[mask]
-		    df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
-		    position_type = df_holder['Position Type'].values[0]
-		    for g in df_holder.groupby('diff').groups:
-		        df_token = df_holder.groupby('diff').get_group(g)
-		        if df_holder[df_holder.index==(df_token.index.values[-1] + 1)].empty:  #this is the case where the float died in the grid cell
-		            continue
-		        else:
-		            date_span = df_token.Date.values[-1]-df_token.Date.values[0]
-		            start_bin = df_token.bin_index.values[0]
-		            final_bin = df_holder[df_holder.index==(df_token.index.values[-1] + 1)].bin_index.values[0]
-		            final_date = df_holder[df_holder.index==(df_token.index.values[-1] + 1)].Date.values[0]
-		            date_span_list.append(date_span)
-		            start_bin_list.append(start_bin)
-		            final_bin_list.append(final_bin)
-		            final_date_list.append(final_date)
-		            position_type_list.append(position_type)
-		            if len(position_type_list)!=len(start_bin_list):
-		            	print 'There is a bug in the code'
-		            	raise
+		for n,cruise in enumerate(self.df.Cruise.unique()[:5]):
+			print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
+			print 'start bin list is ',len(start_bin_list),' long'
+			mask = self.df.Cruise==cruise
+			df_holder = self.df[mask]
+			max_date = df_holder.Date.max()
+			df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
+			position_type = df_holder['Position Type'].values[0]
+			diff_group = OrderedDict(df_holder.groupby('diff').groups)
+			diff_group.popitem() #this is the case where the float died in the last grid cell and we eliminate it
+			for g in diff_group:
+				df_token = df_holder.groupby('diff').get_group(g)
+				start_date = df_token.Date.min()
+				start_date_list.append(start_date)
+				start_bin_list.append(df_token.bin_index.values[0])
+				position_type_list.append(position_type)
+				location_tuple = []
+				for time_addition in [datetime.timedelta(days=x) for x in time_delta_list]:
+					final_date = start_date+time_addition
+					if final_date>max_date:
+						location_tuple.append(np.nan)
+					location_tuple.append(df_holder[df_holder.Date==find_nearest(df_holder.Date,final_date)].bin_index.values[0]) # find the nearest date and record the bin index
+				final_bin_list.append(tuple(location_tuple))
+				if len(position_type_list)!=len(start_bin_list):
+					print 'There is a bug in the code'
+					raise
+		df_dict = {}
+		df_dict['position type']=position_type_list
+		df_dict['date'] = start_date_list
+		df_dict['start_bin'] = start_bin_list
+		for time_delta,bin_list in zip(time_delta_list,zip(*final_bin_list)):
+			bins_string = 'end bin '+str(time_delta)+' day'
+			df_dict[bins_string]=bin_list
+		self.df_transition = pd.DataFrame(df_dict)
 
-
-		date_span_list = [abs(x.astype('timedelta64[D]')/np.timedelta64(1, 'D')) for x in date_span_list]
-		self.df_transition = pd.DataFrame({'date':final_date_list,'position type':position_type_list,'start bin':start_bin_list,'date span':date_span_list,'end bin':final_bin_list})
 		if dump:
 			self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
 	def recompile_transition_matrix(self,dump=True):
+		
 		num_list = []
 		num_list_index = []
 		data_list = []
 		row_list = []
 		column_list = []
+		end_bin_string = 'end bin '+str(self.date_span_limit)+' day'
 		k = len(self.df_transition['start bin'].unique())
 		for n,ii in enumerate(self.df_transition['start bin'].unique()):
 			print 'made it through ',n,' bins. ',(k-n),' remaining'
@@ -120,7 +128,7 @@ class argo_traj_data:
 			frame = self.df_transition[self.df_transition['start bin']==ii]
 			num_list.append(len(frame)) # this is where we save the data density of every cell
 			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
-			frame_cut = frame[frame['date span']<=self.date_span_limit]
+			frame_cut = frame[frame[end_bin_string]!=ii]
 			if not frame_cut.empty:
 				print 'the frame cut was not empty'
 				test_list = []
@@ -129,11 +137,11 @@ class argo_traj_data:
 				data = (len(frame)-len(frame_cut))/float(len(frame))
 				data_list.append(data)
 				test_list.append(data)
-				for qq in frame_cut['end bin'].unique():
+				for qq in frame_cut[end_bin_string].unique():
 					qq_index = self.total_list.index(list(qq))
 					row_list.append(qq_index)
 					column_list.append(ii_index)
-					data = (len(frame_cut[frame_cut['end bin']==qq]))/float(len(frame))
+					data = (len(frame_cut[frame_cut[end_bin_string]==qq]))/float(len(frame))
 					data_list.append(data)
 					test_list.append(data)
 				if abs(sum(test_list)-1)>0.01:
@@ -146,9 +154,9 @@ class argo_traj_data:
 				print 'the frame cut was empy, so I will calculate the scaled dispersion'
 				test_list = []
 				diagonal = 1
-				for qq in frame['end bin'].unique():
+				for qq in frame[end_bin_string].unique():
 					qq_index = self.total_list.index(list(qq))
-					frame_holder = frame[frame['end bin']==qq]
+					frame_holder = frame[frame[end_bin_string]==qq]
 					percentage_of_floats = len(frame_holder)/float(len(frame))
 					frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
 					frame_holder[frame_holder['time step percent']>1]=1
@@ -177,18 +185,18 @@ class argo_traj_data:
 			save_sparse_csr('transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
 			save_sparse_csr('number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
 
-	def recompile_w(self,number,dump=True):
+	def load_w(self,number,dump=True):
 		print 'recompiling w matrix, current number is ',number
 		try:
-			self.w = = load_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
+			self.w = load_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
 		except IOError:
 			if number == 0:
 				self.w = self.transition_matrix 
 			else:
-				self.recompile_w(number-1,dump=True)
-				self.w = self.w.dot(self.transition_matrix)
+				self.load_w(number-1,dump=True)		# recursion to get to the first saved transition matrix 
+				self.w = self.w.dot(self.transition_matrix)		# advance the transition matrix once
 		if dump:
-			save_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)
+			save_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
 
 
 
@@ -341,12 +349,14 @@ class argo_traj_data:
 		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
 
-	def find_nearest(self,array,value):
-	    idx = (np.abs(array-value)).argmin()
-	    return idx
+	def find_nearest(items, pivot):
+		return min(items, key=lambda x: abs(x - pivot))
 
 	def get_latest_soccom_float_locations(self,plot=False):
-		df = pd.read_pickle(soccom_proj_settings.soccom_drifter_file)
+		"""
+		This function gets the latest soccom float locations and returns a vector of thier pdf after it has been multiplied by w
+		"""
+		df = pd.read_pickle('soccom_all.pickle')
 		# df['Lon']=oceans.wrap_lon180(df['Lon'])
 		frames = []
 		for cruise in df.Cruise.unique():                            
@@ -362,12 +372,12 @@ class argo_traj_data:
 		indexes = []
 		float_vector = np.zeros([len(self.total_list),1])
 		for x in zip(lats,lons):
-			# try: 
-			indexes.append(self.total_list.index(list(x)))
-			float_vector[indexes[-1],0]=1
-			# except ValueError:
-			# 	continue
-		float_result = self.w.dot(float_vector)
+			try: 
+				indexes.append(self.total_list.index(list(x)))
+				float_vector[indexes[-1],0]=1
+			except ValueError:	# this is for the case that the starting location of the the soccom float is not in the transition matrix
+				continue
+		float_result = scipy.sparse.csr_matrix(float_vector).transpose().dot(self.w)
 		t = []
 		if plot:
 			t = Basemap(projection='cyl',lon_0=0,fix_aspect=False,)
@@ -383,13 +393,12 @@ class argo_traj_data:
 	def plot_latest_soccom_locations(self):
 		plt.figure(figsize=(10,10))
 		t,float_result = self.get_latest_soccom_float_locations(plot=True)
-		float_result = self.transition_vector_to_plottable(float_result.reshape(len(self.total_list)).tolist()[0])
+		float_result = self.transition_vector_to_plottable(float_result.todense().reshape(len(self.total_list)).tolist()[0])
 		float_result = np.log(np.ma.array(float_result,mask=(float_result<0.001)))
 		XX,YY = t(self.X,self.Y)
 		t.pcolormesh(XX,YY,float_result,cmap=plt.cm.Greens)
 		plt.title('SOCCOM Sampling PDF')
-		plt.savefig('soccom_sampling.png')
-		plt.show()
+		plt.savefig('soccom_sampling_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(num)+'.png')
 
 	def co2_plot(self):
 		df = pd.read_csv('../eulerian_plot/basemap/data/sumflux_2006c.txt', skiprows = 51,sep=r"\s*")
@@ -464,4 +473,6 @@ if __name__ == "__main__":
 	for time_stepsize in np.arange(10,80,20):
 		print 'time stepsize is ',time_stepsize
 		traj_class = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
-		traj_class.seasonal_compare()
+		for num in range(30):
+			traj_class.load_w(number=num,dump=True)
+			traj_class.plot_latest_soccom_locations()
