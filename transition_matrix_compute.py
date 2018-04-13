@@ -17,7 +17,8 @@ import scipy.sparse
 
 "compiles and compares transition matrix from trajectory data. "
 
-
+def find_nearest(items, pivot):
+	return min(items, key=lambda x: abs(x - pivot))
 
 def save_sparse_csr(filename, array):
     np.savez(filename, data=array.data, indices=array.indices,
@@ -30,7 +31,7 @@ def load_sparse_csr(filename):
 
 class argo_traj_data:
 	def __init__(self,degree_bins=2,date_span_limit=40):
-		self.degree_bins = degree_bins
+		self.degree_bins = float(degree_bins)
 		self.date_span_limit = date_span_limit
 		self.bins_lat = np.arange(-90,90.1,self.degree_bins).tolist()
 		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
@@ -70,11 +71,13 @@ class argo_traj_data:
 		"""
 		start_bin_list = []
 		final_bin_list = []
+		end_bin_list = []
+		date_span_list = []
 		start_date_list = []
 		position_type_list = []
 		time_delta_list = np.arange(10,150,15)
 		k = len(self.df.Cruise.unique())
-		for n,cruise in enumerate(self.df.Cruise.unique()[:5]):
+		for n,cruise in enumerate(self.df.Cruise.unique()):
 			print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
 			print 'start bin list is ',len(start_bin_list),' long'
 			mask = self.df.Cruise==cruise
@@ -82,10 +85,11 @@ class argo_traj_data:
 			max_date = df_holder.Date.max()
 			df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
 			position_type = df_holder['Position Type'].values[0]
-			diff_group = OrderedDict(df_holder.groupby('diff').groups)
-			diff_group.popitem() #this is the case where the float died in the last grid cell and we eliminate it
+			group_library = df_holder.groupby('diff').groups
+			diff_group = np.sort(df_holder.groupby('diff').groups.keys()).tolist()
+			diff_group.pop() #this is the case where the float died in the last grid cell and we eliminate it
 			for g in diff_group:
-				df_token = df_holder.groupby('diff').get_group(g)
+				df_token = df_holder[df_holder.index.isin(group_library[g])]
 				start_date = df_token.Date.min()
 				start_date_list.append(start_date)
 				start_bin_list.append(df_token.bin_index.values[0])
@@ -95,25 +99,38 @@ class argo_traj_data:
 					final_date = start_date+time_addition
 					if final_date>max_date:
 						location_tuple.append(np.nan)
-					location_tuple.append(df_holder[df_holder.Date==find_nearest(df_holder.Date,final_date)].bin_index.values[0]) # find the nearest date and record the bin index
+					else:
+						location_tuple.append(df_holder[df_holder.Date==find_nearest(df_holder.Date,final_date)].bin_index.values[0]) # find the nearest date and record the bin index
 				final_bin_list.append(tuple(location_tuple))
-				if len(position_type_list)!=len(start_bin_list):
-					print 'There is a bug in the code'
+				
+				try:
+					advance = df_holder[df_holder.index==(df_token.tail(1).index.values[0]+1)]
+					date_span_list.append((advance.Date.min()-df_token.Date.min()).days)
+					end_bin_list.append(advance['bin_index'].values[0])
+				except IndexError:
+					date_span_list.append(np.nan)
+					end_bin_list.append(np.nan)
+				if any(len(lst) != len(position_type_list) for lst in [start_date_list, start_bin_list, end_bin_list, date_span_list, final_bin_list]):
+					print 'position list length ,',len(position_type_list)
+					print 'start date list ',len(start_date_list)
+					print 'start bin list ',len(start_bin_list)
+					print 'end bin list ',len(end_bin_list)
+					print 'date span list ',len(final_bin_list)
 					raise
 		df_dict = {}
 		df_dict['position type']=position_type_list
 		df_dict['date'] = start_date_list
-		df_dict['start_bin'] = start_bin_list
+		df_dict['start bin'] = start_bin_list
 		for time_delta,bin_list in zip(time_delta_list,zip(*final_bin_list)):
 			bins_string = 'end bin '+str(time_delta)+' day'
 			df_dict[bins_string]=bin_list
+		df_dict['end bin'] = end_bin_list
+		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
-
 		if dump:
 			self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
 	def recompile_transition_matrix(self,dump=True):
-		
 		num_list = []
 		num_list_index = []
 		data_list = []
@@ -128,7 +145,7 @@ class argo_traj_data:
 			frame = self.df_transition[self.df_transition['start bin']==ii]
 			num_list.append(len(frame)) # this is where we save the data density of every cell
 			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
-			frame_cut = frame[frame[end_bin_string]!=ii]
+			frame_cut = frame[frame[end_bin_string]!=ii].dropna(subset=[end_bin_string])
 			if not frame_cut.empty:
 				print 'the frame cut was not empty'
 				test_list = []
@@ -154,7 +171,7 @@ class argo_traj_data:
 				print 'the frame cut was empy, so I will calculate the scaled dispersion'
 				test_list = []
 				diagonal = 1
-				for qq in frame[end_bin_string].unique():
+				for qq in frame['end bin'].unique():
 					qq_index = self.total_list.index(list(qq))
 					frame_holder = frame[frame[end_bin_string]==qq]
 					percentage_of_floats = len(frame_holder)/float(len(frame))
@@ -177,8 +194,6 @@ class argo_traj_data:
 						print 'We have a problem'
 						print sum(test_list)
 						raise
-
-
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
 		if dump:
@@ -198,27 +213,6 @@ class argo_traj_data:
 		if dump:
 			save_sparse_csr('w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
 
-
-
-	def number_plot_plot(self):	
-		try:
-			self.plot_array_ = np.load('number_plot_array.dat')
-		except IOError:
-			self.number_plot_process()
-		plt.figure(figsize=(10,10))
-		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
-		m.drawcoastlines()
-		XX,YY = m(self.X,self.Y)
-		self.plot_array_[self.plot_array_>1000]=1000
-		self.plot_array_ = np.ma.masked_equal(self.plot_array_,0)
-		levs = np.linspace(self.plot_array_.min(),self.plot_array_.max(),50)
-		m.pcolormesh(XX,YY,self.plot_array_.T,levels=levs,cmap=plt.cm.magma)
-		plt.title('Data Density',size=30)
-		plt.colorbar(label='Number of float tracks')
-		plt.savefig('number_plot.png')
-		plt.show()
-
 	def transition_vector_to_plottable(self,vector):
 		plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
 		for n,tup in enumerate(self.total_list):
@@ -227,25 +221,43 @@ class argo_traj_data:
 			plottable[qq_index,ii_index] = vector[n]
 		return plottable
 
-	def transition_plot_array_diagonal(self):
+	def number_matrix_plot(self):	
 		try:
-			self.plot_array_ = np.load('number_plot_array.dat')
+			self.number_matrix = load_sparse_csr('number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 		except IOError:
-			self.number_plot_process()
+			print 'the number matrix could not be loaded'
+			self.recompile_transition_matrix(dump=True)
+		k = np.diagonal(self.number_matrix.todense())
+		number_matrix_plot = self.transition_vector_to_plottable(k)
 		plt.figure(figsize=(10,10))
-		k = np.diagonal(self.transition_matrix)
+		m = Basemap(projection='cyl',fix_aspect=False)
+		m.fillcontinents(color='coral',lake_color='aqua')
+		m.drawcoastlines()
+		XX,YY = m(self.X,self.Y)
+		number_matrix_plot[number_matrix_plot>1000]=1000
+		number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)
+		m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
+		plt.title('Data Density',size=30)
+		plt.colorbar(label='Number of float tracks')
+		plt.savefig('./number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		plt.close()
+
+	def transition_matrix_plot(self):
+		self.number_matrix = load_sparse_csr('number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+		plt.figure(figsize=(10,10))
+		k = np.diagonal(self.transition_matrix.todense())
 		transition_plot = self.transition_vector_to_plottable(k)
 		m = Basemap(projection='cyl',fix_aspect=False)
 		m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
-		transition_plot = np.ma.array((1-transition_plot),mask=self.plot_array_.T==0)
+		transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0)
 		trans_max = abs(transition_plot).max()
-		levs = np.linspace(0,trans_max,50)
-		m.pcolormesh(XX,YY,transition_plot,levels=levs) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title('1 - diagonal of transition matrix',size=30)
-		plt.savefig('transition_matrix_diag.png')
+		plt.savefig('./transition_plots/transition_matrix_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		plt.close()
 
 	def float_pdf(self):
 		for ii in np.random.choice(range(len(self.total_list)),10,replace=False):
@@ -318,7 +330,7 @@ class argo_traj_data:
 			save_sparse_csr('number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_argos)
 			save_sparse_csr('transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_gps)
 			save_sparse_csr('number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_gps)
-		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','/dataset_difference/dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
 
 
@@ -346,11 +358,10 @@ class argo_traj_data:
 			save_sparse_csr('number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_winter)
 			save_sparse_csr('transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_summer)
 			save_sparse_csr('number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_summer)
-		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'/seasonal/Seasonal Difference (Summer - Winter)','seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
 
-	def find_nearest(items, pivot):
-		return min(items, key=lambda x: abs(x - pivot))
+
 
 	def get_latest_soccom_float_locations(self,plot=False):
 		"""
@@ -367,8 +378,8 @@ class argo_traj_data:
 			else:
 				continue
 		df = pd.concat(frames)
-		lats = [self.bins_lat[self.find_nearest(x,self.bins_lat)] for x in df.Lat.values]
-		lons = [self.bins_lon[self.find_nearest(x,self.bins_lon)] for x in df.Lon.values]
+		lats = [self.bins_lat[find_nearest(x,self.bins_lat)] for x in df.Lat.values]
+		lons = [self.bins_lon[find_nearest(x,self.bins_lon)] for x in df.Lon.values]
 		indexes = []
 		float_vector = np.zeros([len(self.total_list),1])
 		for x in zip(lats,lons):
@@ -416,8 +427,8 @@ class argo_traj_data:
 		x[-1] = 180
 		co2_vector = np.zeros([len(self.total_list),1])
 		for n,(lat,lon) in enumerate(self.total_list):
-			lon_index = self.find_nearest(lon,x)
-			lat_index = self.find_nearest(lat,y)
+			lon_index = find_nearest(lon,x)
+			lat_index = find_nearest(lat,y)
 			co2_vector[n] = CO2[lat_index,lon_index]
 		co2_plot = abs(self.transition_vector_to_plottable(co2_vector))
 		plt.figure()
@@ -470,9 +481,8 @@ class argo_traj_data:
 if __name__ == "__main__":
 	degree_stepsize = float(sys.argv[1])
 	print 'degree stepsize is ',degree_stepsize
-	for time_stepsize in np.arange(10,80,20):
+	for time_stepsize in np.arange(10,150,15):
 		print 'time stepsize is ',time_stepsize
 		traj_class = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
-		for num in range(30):
-			traj_class.load_w(number=num,dump=True)
-			traj_class.plot_latest_soccom_locations()
+		traj_class.number_matrix_plot()
+		traj_class.transition_matrix_plot()
