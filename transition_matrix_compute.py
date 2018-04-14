@@ -143,9 +143,9 @@ class argo_traj_data:
 			ii_index = self.total_list.index(list(ii))
 			date_span_addition = 0 
 			frame = self.df_transition[self.df_transition['start bin']==ii]
-			num_list.append(len(frame)) # this is where we save the data density of every cell
 			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
 			frame_cut = frame[frame[end_bin_string]!=ii].dropna(subset=[end_bin_string])
+			num_list.append(len(frame_cut)) # this is where we save the data density of every cell
 			if not frame_cut.empty:
 				print 'the frame cut was not empty'
 				test_list = []
@@ -288,8 +288,8 @@ class argo_traj_data:
 		transition_matrix_plot = matrix_a-matrix_b
 		# transition_matrix_plot[transition_matrix_plot>0.25]=0.25
 		# transition_matrix_plot[transition_matrix_plot<-0.25]=-0.25
-		trans_max = abs(transition_matrix_plot).max()
 		k = np.diagonal(transition_matrix_plot.todense())
+		trans_max = abs(k).max()
 		transition_plot = self.transition_vector_to_plottable(k)
 		num_matrix_a = self.transition_vector_to_plottable(np.diagonal(num_matrix_a.todense()))
 		num_matrix_b = self.transition_vector_to_plottable(np.diagonal(num_matrix_b.todense()))
@@ -484,5 +484,6 @@ if __name__ == "__main__":
 	for time_stepsize in np.arange(10,150,15):
 		print 'time stepsize is ',time_stepsize
 		traj_class = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
+		traj_class.recompile_transition_matrix()
 		traj_class.number_matrix_plot()
 		traj_class.transition_matrix_plot()
