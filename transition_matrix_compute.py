@@ -33,8 +33,8 @@ class argo_traj_data:
 	def __init__(self,degree_bins=2,date_span_limit=40):
 		self.degree_bins = float(degree_bins)
 		self.date_span_limit = date_span_limit
-		self.bins_lat = np.arange(-90,90.1,self.degree_bins).tolist()
-		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
+		self.bins_lat = np.arange(-90,95,self.degree_bins).tolist()
+		self.bins_lon = np.arange(-180,185,self.degree_bins).tolist()
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 
 		self.df = pd.read_pickle('global_argo_traj')
@@ -63,7 +63,7 @@ class argo_traj_data:
 			self.recompile_transition_matrix()
 
 
-	def recompile_transition_df(self,dump=True):
+	def recompile_transition_df(self):
 		"""
 		from self.df, calculate the dataframe that is used to create the transition matrix
 
@@ -75,7 +75,7 @@ class argo_traj_data:
 		date_span_list = []
 		start_date_list = []
 		position_type_list = []
-		time_delta_list = np.arange(10,150,15)
+		time_delta_list = np.arange(10,300,15)
 		k = len(self.df.Cruise.unique())
 		for n,cruise in enumerate(self.df.Cruise.unique()):
 			print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
@@ -127,8 +127,7 @@ class argo_traj_data:
 		df_dict['end bin'] = end_bin_list
 		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
-		if dump:
-			self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
+		self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
 	def recompile_transition_matrix(self,dump=True):
 		num_list = []
@@ -234,9 +233,9 @@ class argo_traj_data:
 		m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
-		number_matrix_plot[number_matrix_plot>1000]=1000
+		# number_matrix_plot[number_matrix_plot>1000]=1000
 		number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)
-		m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
+		m.pcolormesh(XX,YY,number_matrix_plot,vmin=0,vmax=500,cmap=plt.cm.magma)
 		plt.title('Data Density',size=30)
 		plt.colorbar(label='Number of float tracks')
 		plt.savefig('./number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
@@ -252,8 +251,7 @@ class argo_traj_data:
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 		transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0)
-		trans_max = abs(transition_plot).max()
-		m.pcolormesh(XX,YY,transition_plot) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=1) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title('1 - diagonal of transition matrix',size=30)
 		plt.savefig('./transition_plots/transition_matrix_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
@@ -285,22 +283,27 @@ class argo_traj_data:
 
 
 	def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
+
+		vmax = 0.3
 		transition_matrix_plot = matrix_a-matrix_b
 		# transition_matrix_plot[transition_matrix_plot>0.25]=0.25
 		# transition_matrix_plot[transition_matrix_plot<-0.25]=-0.25
 		k = np.diagonal(transition_matrix_plot.todense())
-		trans_max = abs(k).max()
+
 		transition_plot = self.transition_vector_to_plottable(k)
 		num_matrix_a = self.transition_vector_to_plottable(np.diagonal(num_matrix_a.todense()))
 		num_matrix_b = self.transition_vector_to_plottable(np.diagonal(num_matrix_b.todense()))
-		transition_plot = np.ma.array(transition_plot,mask=(num_matrix_a==0)|(num_matrix_b==0))
+		transition_plot = np.ma.array(transition_plot,mask=(num_matrix_a==0)|(num_matrix_b==0)|np.isnan(transition_plot))
+		print 'maximum of comparison is ', transition_plot.max()
+		print 'minimum of comparison is ', transition_plot.min()
+
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
 		m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		m.drawmapboundary(fill_color='grey')
 		XX,YY = m(self.X,self.Y)
-		m.pcolormesh(XX,YY,transition_plot,vmin=-trans_max,vmax=trans_max,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
+		m.pcolormesh(XX,YY,transition_plot,vmin=-vmax,vmax=vmax,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
 		plt.colorbar(label='% particles dispersed')
 		plt.title(title,size=30)
 		plt.savefig(save_name)
@@ -330,7 +333,7 @@ class argo_traj_data:
 			save_sparse_csr('number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_argos)
 			save_sparse_csr('transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_gps)
 			save_sparse_csr('number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_gps)
-		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','/dataset_difference/dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','./dataset_difference/dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
 
 
@@ -358,7 +361,7 @@ class argo_traj_data:
 			save_sparse_csr('number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_winter)
 			save_sparse_csr('transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_summer)
 			save_sparse_csr('number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_summer)
-		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'/seasonal/Seasonal Difference (Summer - Winter)','seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','./seasonal/seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
 
 
@@ -451,17 +454,10 @@ class argo_traj_data:
 		desired_vector, residual = scipy.optimize.nnls(self.w,np.squeeze(co2_vector))
 		print len(desired_vector)
 
-
-
-
-
 		truth_list = np.array((desired_vector>0).astype(int))
 		truth_list.reshape([len(self.total_list),1])
 
 		print np.array(self.total_list)[desired_vector>0]
-
-
-
 		y,x = zip(*np.array(self.total_list)[desired_vector>0])
 
 		desired_plot = self.transition_vector_to_plottable(desired_vector)
@@ -481,9 +477,10 @@ class argo_traj_data:
 if __name__ == "__main__":
 	degree_stepsize = float(sys.argv[1])
 	print 'degree stepsize is ',degree_stepsize
-	for time_stepsize in np.arange(10,150,15):
+	for time_stepsize in np.arange(10,300,15):
 		print 'time stepsize is ',time_stepsize
 		traj_class = argo_traj_data(degree_bins=degree_stepsize,date_span_limit=time_stepsize)
-		traj_class.recompile_transition_matrix()
-		traj_class.number_matrix_plot()
 		traj_class.transition_matrix_plot()
+		traj_class.number_matrix_plot()
+		traj_class.seasonal_compare()
+		traj_class.gps_argos_compare()
