@@ -36,7 +36,8 @@ class argo_traj_data:
 		self.bins_lat = np.arange(-90,90,self.degree_bins).tolist()
 		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
 		if 180.0 not in self.bins_lon:
-			self.bins_lon += [180.0]		#need to add this logic for the degree bin choices that do not end at 180. 
+			print '180 is not divisable by the degree bins chosen'		#need to add this logic for the degree bin choices that do not end at 180. 
+			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 
 		self.df = pd.read_pickle('global_argo_traj')
@@ -63,7 +64,6 @@ class argo_traj_data:
 		except IOError:
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
-
 
 	def recompile_transition_df(self):
 		"""
@@ -259,30 +259,6 @@ class argo_traj_data:
 		plt.savefig('./transition_plots/transition_matrix_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 		plt.close()
 
-	def float_pdf(self):
-		for ii in np.random.choice(range(len(self.total_list)),10,replace=False):
-		    print ii
-		    float_vector = np.zeros([len(self.total_list),1])
-		    float_vector[ii,0]=1
-		    print self.w.shape
-		    print float_vector.shape
-		    float_result = self.w.dot(float_vector)
-		    plt.figure()
-		    print float_result.shape
-		    print float_result.reshape(len(self.total_list)).tolist()[0]
-		    float_result = self.transition_vector_to_plottable(float_result.reshape(len(self.total_list)).tolist()[0])
-		    m = Basemap(projection='cyl',lon_0=0)
-		    m.fillcontinents(color='coral',lake_color='aqua')
-		    m.drawcoastlines()
-		    XX,YY = m(self.X,self.Y)
-
-		    m.pcolormesh(XX,YY,float_result) # this is a plot for the tendancy of the residence time at a grid cell    
-		    lat,lon = self.total_list[ii]
-		    x,y = m(lon,lat)
-		    m.plot(x,y,'y*',markersize=20)
-		    plt.title('1 year particle deployment at '+str(lat)+' lat,'+str(lon)+' lon',size=30)
-		plt.show()
-
 
 	def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
 
@@ -365,6 +341,44 @@ class argo_traj_data:
 			save_sparse_csr('number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_summer)
 		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','./seasonal/seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
+	def east_west_north_south_plot(self):
+		lon_list, lat_list = zip(*self.total_list)
+		lon_max = 180/self.degree_bins
+		east_west = []
+		north_south = []
+		for item in self.total_list:
+			lon,lat = item
+			east_west.append((np.array(lon_list)-lon)/self.degree_bins)
+			north_south.append((np.array(lat_list)-lat)/self.degree_bins)
+		east_west[east_west>lon_max] = east_west[east_west>lon_max]-2*lon_max	# logic for elements going across the dateline
+		east_west[east_west<lon_max] = east_west[east_west<lon_max]+2*lon_max	# logic for elements going across the dateline
+		east_west = np.array(north_south).T
+		north_south = np.array(north_south).T
+		trans_mat = self.transition_matrix.todense()
+		e_w_max = max(abs(east_west[trans_mat!=0]))
+		n_s_max = max(abs(east_west[trans_mat!=0]))
+		print 'the farthest east-west distance is', e_w_max
+		print 'the farthest north-south distance is', n_s_max
+		assert e_w_max < 20
+		assert n_s_max < 20
+		east_west = np.multiply(trans_mat,east_west)
+		north_south = np.multiply(trans_mat,north_south)
+		east_west = self.transition_vector_to_plottable(np.sum(east_west))
+		north_south = self.transition_vector_to_plottable(np.sum(north_south))
+		self.number_matrix = load_sparse_csr('number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+
+
+		m = Basemap(projection='cyl',fix_aspect=False)
+		m.fillcontinents(color='coral',lake_color='aqua')
+		m.drawcoastlines()
+		XX,YY = m(self.X,self.Y)
+		number_mask = self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0
+		east_west = np.ma.array(east_west,mask=number_mask)
+		north_south = np.ma.array(north_south,mask=number_mask)
+
+		m.quiver(XX,YY,east_west,north_south) # this is a plot for the tendancy of the residence time at a grid cell
+		plt.savefig('./quiver_plots/quiver_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		plt.close()
 
 
 
