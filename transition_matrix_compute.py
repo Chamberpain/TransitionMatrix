@@ -33,8 +33,10 @@ class argo_traj_data:
 	def __init__(self,degree_bins=2,date_span_limit=40):
 		self.degree_bins = float(degree_bins)
 		self.date_span_limit = date_span_limit
-		self.bins_lat = np.arange(-90,95,self.degree_bins).tolist()
-		self.bins_lon = np.arange(-180,185,self.degree_bins).tolist()
+		self.bins_lat = np.arange(-90,90,self.degree_bins).tolist()
+		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
+		if 180.0 not in self.bins_lon:
+			self.bins_lon += [180.0]		#need to add this logic for the degree bin choices that do not end at 180. 
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 
 		self.df = pd.read_pickle('global_argo_traj')
