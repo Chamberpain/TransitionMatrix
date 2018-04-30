@@ -3,7 +3,8 @@ from netCDF4 import Dataset
 import fnmatch
 import sys,os
 
-
+nc_fid = Dataset('/data/soccom/CM2p6/ocean_scalar.static.nc')
+mask = nc_fid['ht'][:]<2000
 data_directory = '/data/soccom/CM2p6/ocean_minibling_surf_flux'
 pco2_list = []
 o2_list = []
@@ -26,6 +27,8 @@ for n, match in enumerate(matches):
     o2_list.append(o2_variance)
 
 mean_pco2 = np.ma.mean(np.ma.dstack(pco2_list),axis=2)
+mean_pco2 = np.ma.array(mean_pco2,mask=mask)
 mean_pco2.dump('mean_pco2.dat')
 mean_o2 = np.ma.mean(np.ma.dstack(o2_list),axis=2)
-mean_o2.dump('mean_pco2.dat')
+mean_o2 = np.ma.array(mean_o2,mask=mask)
+mean_o2.dump('mean_o2.dat')
