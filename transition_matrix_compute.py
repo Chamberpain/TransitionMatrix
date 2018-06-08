@@ -20,7 +20,78 @@ from matplotlib.colors import LogNorm
 from scipy.interpolate import griddata
 
 """compiles and compares transition matrix from trajectory data. """
+class Basemap(Basemap):
+    def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
+        """
+        Draws a polygon centered at ``x0, y0``. The polygon approximates an
+        ellipse on the surface of the Earth with semi-major-axis ``a`` and 
+        semi-minor axis ``b`` degrees longitude and latitude, made up of 
+        ``n`` vertices.
 
+        For a description of the properties of ellipsis, please refer to [1].
+
+        The polygon is based upon code written do plot Tissot's indicatrix
+        found on the matplotlib mailing list at [2].
+
+        Extra keyword ``ax`` can be used to override the default axis instance.
+
+        Other \**kwargs passed on to matplotlib.patches.Polygon
+
+        RETURNS
+            poly : a maptplotlib.patches.Polygon object.
+
+        REFERENCES
+            [1] : http://en.wikipedia.org/wiki/Ellipse
+
+
+        """
+        ax = kwargs.pop('ax', None) or self._check_ax()
+        g = pyproj.Geod(a=self.rmajor, b=self.rminor)
+        # Gets forward and back azimuths, plus distances between initial
+        # points (x0, y0)
+        azf, azb, dist = g.inv([x0, x0], [y0, y0], [x0+a, x0], [y0, y0+b])
+        tsid = dist[0] * dist[1] # a * b
+
+        # Initializes list of segments, calculates \del azimuth, and goes on 
+        # for every vertex
+        seg = []
+        AZ = numpy.linspace(azf[0], 360. + azf[0], n)
+        for i, az in enumerate(AZ):
+            # Skips segments along equator (Geod can't handle equatorial arcs).
+            if numpy.allclose(0., y0) and (numpy.allclose(90., az) or
+                numpy.allclose(270., az)):
+                continue
+
+            # In polar coordinates, with the origin at the center of the 
+            # ellipse and with the angular coordinate ``az`` measured from the
+            # major axis, the ellipse's equation  is [1]:
+            #
+            #                           a * b
+            # r(az) = ------------------------------------------
+            #         ((b * cos(az))**2 + (a * sin(az))**2)**0.5
+            #
+            # Azymuth angle in radial coordinates and corrected for reference
+            # angle.
+            azr = 2. * numpy.pi / 360. * (phi+az + 90.)
+            A = dist[0] * numpy.sin(azr)
+            B = dist[1] * numpy.cos(azr)
+            r = tsid / (B**2. + A**2.)**0.5
+            lon, lat, azb = g.fwd(x0, y0, az, r)
+            x, y = self(lon, lat)
+
+            # Add segment if it is in the map projection region.
+            if x < 1e20 and y < 1e20:
+                seg.append((x, y))
+        # print seg
+        poly = Polygon(seg, **kwargs)
+        ax.add_patch(poly)
+
+        # Set axes limits to fit map region.
+        self.set_axes_limits(ax=ax)
+
+        return poly
+
+        
 def find_nearest(items, pivot):
 	return min(items, key=lambda x: abs(x - pivot))
 
@@ -32,6 +103,8 @@ def load_sparse_csr(filename):
     loader = np.load(filename)
     return scipy.sparse.csr_matrix((loader['data'], loader['indices'], loader['indptr']),
                       shape=loader['shape']).T #this transpose is very important because otherwise these transition matrices load wrong and send flow the wrong way.
+
+__file__ = '/Users/paulchamberlain/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
 
 class argo_traj_data:
 	def __init__(self,degree_bins=2,date_span_limit=30):
@@ -47,23 +120,28 @@ class argo_traj_data:
 		self.df = pd.read_pickle(os.path.dirname(os.path.realpath(__file__))+'/global_argo_traj').sort_values(by=['Cruise','Date'])
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
-		self.df = self.df.dropna(subset=['bins_lon','bins_lat'])
+		self.df = self.df.dropna(subset=['bins_lon','bins_lat']) # get rid of binned values outside of the domain
 		self.df = self.df.reset_index(drop=True)
 		self.df['bin_index'] = zip(self.df['bins_lat'].values,self.df['bins_lon'].values)
+
+		#implement tests of the dataset so that all values are within the known domain
 		assert self.df.Lon.min() >= -180
 		assert self.df.Lon.max() <= 180
 		assert self.df.Lat.max() <= 90
 		assert self.df.Lat.min() >=-90
+
 		try:
 			self.df_transition = pd.read_pickle(os.path.dirname(os.path.realpath(__file__))+'/transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
-			assert (self.df_transition['date span']>=0).all() #server
-		except IOError:
+			assert (self.df_transition['date span']>=0).all() #require time to go in the right direction
+
+		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
+
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
-		try:
+		try: # try to load the transition matrix
 			self.transition_matrix = load_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-		except IOError:
+		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
 
@@ -92,14 +170,14 @@ class argo_traj_data:
 		for n,cruise in enumerate(self.df.Cruise.unique()):
 			print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
 			print 'start bin list is ',len(start_bin_list),' long'
-			mask = self.df.Cruise==cruise
+			mask = self.df.Cruise==cruise  		#pick out the cruise data from the df
 			df_holder = self.df[mask]
 			max_date = df_holder.Date.max()
 			df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
 			position_type = df_holder['Position Type'].values[0]
 			group_library = df_holder.groupby('diff').groups
 			diff_group = np.sort(df_holder.groupby('diff').groups.keys()).tolist()
-			diff_group.pop() #this is the case where the float died in the last grid cell and we eliminate it
+			diff_group.pop() #this is the last grid box the float moved into and we can assume it died
 			for g in diff_group:
 				df_token = df_holder[df_holder.index.isin(group_library[g])]
 				start_date = df_token.Date.min()
@@ -507,29 +585,72 @@ class argo_traj_data:
 		# print trans_mat.shape
 		# print east_west.shape
 		# print north_south.shape
-		e_w_max = max(abs(east_west[trans_mat!=0]))
-		n_s_max = max(abs(north_south[trans_mat!=0]))
-		print 'the farthest east-west distance is', e_w_max
-		print 'the farthest north-south distance is', n_s_max
-		# assert e_w_max < 20
-		# assert n_s_max < 20
+		# e_w_max = max(abs(east_west[trans_mat!=0]))
+		# n_s_max = max(abs(north_south[trans_mat!=0]))
+		# print 'the farthest east-west distance is', e_w_max
+		# print 'the farthest north-south distance is', n_s_max
+		# # assert e_w_max < 20
+		# # assert n_s_max < 20
 		east_west = np.multiply(trans_mat,east_west)
 		north_south = np.multiply(trans_mat,north_south)
 		# print np.sum(east_west,axis=0).tolist()[0]
 		# print np.sum(east_west,axis=0).shape
-		east_west = self.transition_vector_to_plottable(np.sum(east_west,axis=0).tolist()[0])
-		north_south = self.transition_vector_to_plottable(np.sum(north_south,axis=0).tolist()[0])
-		self.number_matrix = load_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
-		m.drawcoastlines()
-		XX,YY = m(self.X,self.Y)
-		number_mask = self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0
-		east_west = np.ma.array(east_west,mask=number_mask)
-		north_south = np.ma.array(north_south,mask=number_mask)
-		m.quiver(XX,YY,east_west,north_south,scale=25) # this is a plot for the tendancy of the residence time at a grid cell
+		# m.fillcontinents(color='coral',lake_color='aqua')
 
+
+		m.drawcoastlines()
+		Y = np.arange(-68,66,6)
+		X = np.arange(-168,170,6)
+		XX,YY = np.meshgrid(X,Y)
+		n_s = np.zeros(XX.shape)
+		e_w = np.zeros(XX.shape)
+		XX,YY = m(XX,YY)
+		for i,lat in enumerate(Y):
+			for k,lon in enumerate(X):
+				print 'lat = ',lat
+				print 'lon = ',lon 
+				try:
+					index = self.total_list.index([lat,lon])
+				except ValueError:
+					print 'There was a value error in the total list'
+					continue
+				n_s[i,k] = north_south[:,index].mean()
+				e_w[i,k] = east_west[:,index].mean()
+				y = north_south[:,index]
+				x = east_west[:,index]
+				mask = (x!=0)|(y!=0) 
+				x = x[mask]
+				y = y[mask]
+				w,v = np.linalg.eig(np.cov(x,y))
+				angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))
+				axis1 = 2*max(w)*np.sqrt(5.991)
+				axis2 = 2*min(w)*np.sqrt(5.991)
+				print 'angle = ',angle
+				print 'axis1 = ',axis1
+				print 'axis2 = ',axis2
+				if axis1>0.5: 
+					print 'Axis 1 is too big'
+					continue
+				if axis2>0.1: 
+					print 'Axis 2 is too big'
+					continue
+
+				poly = m.ellipse(lon, lat, axis1*200,axis2*200, 100,phi=angle, facecolor='green', zorder=3,alpha=0.35)
+		# east_west = self.transition_vector_to_plottable(np.sum(east_west,axis=0).tolist()[0])
+		# north_south = self.transition_vector_to_plottable(np.sum(north_south,axis=0).tolist()[0])
+		# self.number_matrix = load_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+
+
+		# number_mask = self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0
+		# east_west = np.ma.array(east_west,mask=number_mask)
+		# north_south = np.ma.array(north_south,mask=number_mask)
+		# m.quiver(XX,YY,east_west,north_south,scale=25) # this is a plot for the tendancy of the residence time at a grid cell
+		e_w = np.ma.array(e_w,mask=(e_w==0))
+		n_s = np.ma.array(n_s,mask=(n_s==0))
+		m.quiver(XX,YY,e_w*10000,n_s*10000,scale=25)
+		plt.title('Variance Ellipses of Transition Matrix')
 
 	def diagnose_matrix(self,matrix,filename):
 		plt.figure(figsize=(10,10))
@@ -853,7 +974,9 @@ class argo_traj_data:
 
 
 
-
+traj_class = argo_traj_data()
+traj_class.quiver_plot()
+plt.show()
 
 
 
