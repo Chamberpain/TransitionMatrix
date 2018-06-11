@@ -137,7 +137,7 @@ class argo_traj_data:
 		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
-
+		self.identify_problems_df_transition(end_bin_string)
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 		try: # try to load the transition matrix
 			self.transition_matrix = load_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
@@ -221,22 +221,28 @@ class argo_traj_data:
 		self.df_transition = pd.DataFrame(df_dict)
 		self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
-	def identify_problems_df_transition(self):
-		degree_max = 12
-		cruise_list = []
-		east_west,north_south = self.get_direction_matrix()
-		distance_mat = np.sqrt(east_west**2+north_south**2)*self.degree_bins
-		trans_mat = self.transition_matrix.todense()
-		dummy,col_index = np.where(trans_mat!=0)
-		potential_problems = col_index[abs(east_west[trans_mat!=0])*self.degree_bins>degree_max] # we only choose y, because we are only interested in the column
-		for index in potential_problems:
-			x,y = self.total_list[index]
-			frame = self.df_transition[self.df_transition['start bin']==tuple(self.total_list[index])].dropna()
-			if frame.empty:
-				continue
-			x1,y1 = zip(*frame['end bin '+str(self.date_span_limit)+' day'].values)
-			cruise_list += frame[abs(x1-x)+abs(y1-y)>degree_max].Cruise.unique().tolist()
-		return cruise_list
+	def identify_problems_df_transition(self,end_bin_string,plot=False):
+		degree_max = self.date_span_limit/3.
+		lat1,lon1 = zip(*self.df_transition['start bin'].values)
+		lat2,lon2 = zip(*self.df_transition[end_bin_string].values)
+		lat_diff = np.array(lat1)-np.array(lat2)
+		lon_diff = np.array(lon1)-np.array(lon2)
+		lon_diff[lon_diff<-180] = lon_diff[lon_diff<-180]+360
+		lon_diff[lon_diff>180] = lon_diff[lon_diff>180]-360
+		distance = np.sqrt((lat_diff*np.cos(lat1))**2+lon_diff**2)
+		self.df_transition['distance_check'] = distance 
+		cruise_list = self.df_transition[self.df_transition.distance_check>degree_max].Cruise.unique()
+		if plot:
+			for cruise in cruise_list:
+				df_holder = self.df[self.df.Cruise==cruise]
+				df_holder1 = self.df_transition[self.df_transition.Cruise==cruise]
+				x = df_holder.Lon.values
+				y = df_holder.Lat.values
+				plt.plot(x,y)
+				plt.scatter(x,y)
+				plt.title('Max distance is '+str(df_holder1.distance_check.max()))
+				plt.show()
+		self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(cruise_list)]
 
 
 	def recompile_transition_matrix(self,dump=True):
@@ -245,23 +251,23 @@ class argo_traj_data:
 		data_list = []
 		row_list = []
 		column_list = []
-		end_bin_string = 'end bin '+str(self.date_span_limit)+' day'
+		end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
+		self.df_transition = self.df_transition.dropna(subset=[end_bin_string])
 
 		k = len(self.df_transition['start bin'].unique())
 		for n,ii in enumerate(self.df_transition['start bin'].unique()):
 			print 'made it through ',n,' bins. ',(k-n),' remaining'
 			ii_index = self.total_list.index(list(ii))
-			date_span_addition = 0 
-			frame = self.df_transition[self.df_transition['start bin']==ii]
+			frame = self.df_transition[self.df_transition['start bin']==ii]	# data from of floats that start in looped grid cell
+			frame_cut = frame[frame[end_bin_string]!=ii].dropna(subset=[end_bin_string]) #this is all floats that go out of the looped grid cell
 			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
-			frame_cut = frame[frame[end_bin_string]!=ii].dropna(subset=[end_bin_string])
 			num_list.append(len(frame_cut)) # this is where we save the data density of every cell
 			if not frame_cut.empty:
 				print 'the frame cut was not empty'
 				test_list = []
-				row_list.append(ii_index)
-				column_list.append(ii_index)
-				data = (len(frame)-len(frame_cut))/float(len(frame))
+				row_list.append(ii_index)	#compute the on diagonal elements
+				column_list.append(ii_index)	#compute the on diagonal elemnts
+				data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
 				data_list.append(data)
 				test_list.append(data)
 				print 'total number of row slots is ',len(frame_cut[end_bin_string].unique())
@@ -269,14 +275,14 @@ class argo_traj_data:
 					try:
 						qq_index = self.total_list.index(list(qq))
 					except ValueError:
-						print qq,' was not in the list'
+						print qq,' was not in the list'	#this is problematic, how could qq not be in the list?? Needs more testing
 						continue
 					row_list.append(qq_index)
 					column_list.append(ii_index)
 					data = (len(frame_cut[frame_cut[end_bin_string]==qq]))/float(len(frame))
 					data_list.append(data)
 					test_list.append(data)
-				if abs(sum(test_list)-1)>0.01:
+				if abs(sum(test_list)-1)>0.01:	#ensure that all columns scale to 1
 						print 'ding ding ding ding'
 						print '*******************'
 						print 'We have a problem'
@@ -339,11 +345,6 @@ class argo_traj_data:
 				print frame_cut
 				raise			
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
-		cruise_list = self.identify_problems_df_transition()
-		if cruise_list:
-			self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(cruise_list)]
-			self.recompile_transition_matrix()
-
 		# self.transition_matrix = self.add_noise(self.transition_matrix)
 		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
 
@@ -670,7 +671,7 @@ class argo_traj_data:
 
 	def get_latest_soccom_float_locations(self,plot=False,individual = False):
 		"""
-		This function gets the latest soccom float locations and returns a vector of thier pdf after it has been multiplied by w
+		This function gets the latest soccom float locations and returns a vector of the pdf after it has been multiplied by w
 		"""
 
 		try:
@@ -974,7 +975,7 @@ class argo_traj_data:
 
 
 
-traj_class = argo_traj_data()
+traj_class = argo_traj_data(date_span_limit=60)
 traj_class.quiver_plot()
 plt.show()
 
