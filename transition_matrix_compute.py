@@ -5,6 +5,8 @@ import matplotlib
 # matplotlib.use('agg') #server
 import matplotlib.pyplot as plt
 from mpl_toolkits.basemap import Basemap,shiftgrid
+from matplotlib.patches import Polygon
+from mpl_toolkits.basemap import pyproj
 import matplotlib.colors
 import sys,os
 from collections import OrderedDict
@@ -18,6 +20,8 @@ import scipy.optimize
 from itertools import groupby  
 from matplotlib.colors import LogNorm
 from scipy.interpolate import griddata
+import random
+import math
 
 """compiles and compares transition matrix from trajectory data. """
 class Basemap(Basemap):
@@ -55,11 +59,11 @@ class Basemap(Basemap):
         # Initializes list of segments, calculates \del azimuth, and goes on 
         # for every vertex
         seg = []
-        AZ = numpy.linspace(azf[0], 360. + azf[0], n)
+        AZ = np.linspace(azf[0], 360. + azf[0], n)
         for i, az in enumerate(AZ):
             # Skips segments along equator (Geod can't handle equatorial arcs).
-            if numpy.allclose(0., y0) and (numpy.allclose(90., az) or
-                numpy.allclose(270., az)):
+            if np.allclose(0., y0) and (np.allclose(90., az) or
+                np.allclose(270., az)):
                 continue
 
             # In polar coordinates, with the origin at the center of the 
@@ -72,9 +76,9 @@ class Basemap(Basemap):
             #
             # Azymuth angle in radial coordinates and corrected for reference
             # angle.
-            azr = 2. * numpy.pi / 360. * (phi+az + 90.)
-            A = dist[0] * numpy.sin(azr)
-            B = dist[1] * numpy.cos(azr)
+            azr = 2. * np.pi / 360. * (phi+az + 90.)
+            A = dist[0] * np.sin(azr)
+            B = dist[1] * np.cos(azr)
             r = tsid / (B**2. + A**2.)**0.5
             lon, lat, azb = g.fwd(x0, y0, az, r)
             x, y = self(lon, lat)
@@ -137,8 +141,13 @@ class argo_traj_data:
 		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
-		self.identify_problems_df_transition(end_bin_string)
+		self.end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
+		self.df_transition = self.df_transition.dropna(subset=[self.end_bin_string])
+		self.identify_problems_df_transition()
+		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
+			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
+
 		try: # try to load the transition matrix
 			self.transition_matrix = load_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 		except IOError: # if the matrix cannot load, recompile
@@ -221,10 +230,10 @@ class argo_traj_data:
 		self.df_transition = pd.DataFrame(df_dict)
 		self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
-	def identify_problems_df_transition(self,end_bin_string,plot=False):
+	def identify_problems_df_transition(self,plot=False):
 		degree_max = self.date_span_limit/3.
 		lat1,lon1 = zip(*self.df_transition['start bin'].values)
-		lat2,lon2 = zip(*self.df_transition[end_bin_string].values)
+		lat2,lon2 = zip(*self.df_transition[self.end_bin_string].values)
 		lat_diff = np.array(lat1)-np.array(lat2)
 		lon_diff = np.array(lon1)-np.array(lon2)
 		lon_diff[lon_diff<-180] = lon_diff[lon_diff<-180]+360
@@ -251,15 +260,13 @@ class argo_traj_data:
 		data_list = []
 		row_list = []
 		column_list = []
-		end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
-		self.df_transition = self.df_transition.dropna(subset=[end_bin_string])
 
 		k = len(self.df_transition['start bin'].unique())
 		for n,ii in enumerate(self.df_transition['start bin'].unique()):
 			print 'made it through ',n,' bins. ',(k-n),' remaining'
 			ii_index = self.total_list.index(list(ii))
 			frame = self.df_transition[self.df_transition['start bin']==ii]	# data from of floats that start in looped grid cell
-			frame_cut = frame[frame[end_bin_string]!=ii].dropna(subset=[end_bin_string]) #this is all floats that go out of the looped grid cell
+			frame_cut = frame[frame[self.end_bin_string]!=ii].dropna(subset=[self.end_bin_string]) #this is all floats that go out of the looped grid cell
 			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
 			num_list.append(len(frame_cut)) # this is where we save the data density of every cell
 			if not frame_cut.empty:
@@ -270,24 +277,14 @@ class argo_traj_data:
 				data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
 				data_list.append(data)
 				test_list.append(data)
-				print 'total number of row slots is ',len(frame_cut[end_bin_string].unique())
-				for qq in frame_cut[end_bin_string].unique():
-					try:
-						qq_index = self.total_list.index(list(qq))
-					except ValueError:
-						print qq,' was not in the list'	#this is problematic, how could qq not be in the list?? Needs more testing
-						continue
+				print 'total number of row slots is ',len(frame_cut[self.end_bin_string].unique())
+				for qq in frame_cut[self.end_bin_string].unique():
+					qq_index = self.total_list.index(list(qq))
 					row_list.append(qq_index)
 					column_list.append(ii_index)
-					data = (len(frame_cut[frame_cut[end_bin_string]==qq]))/float(len(frame))
+					data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
 					data_list.append(data)
 					test_list.append(data)
-				if abs(sum(test_list)-1)>0.01:	#ensure that all columns scale to 1
-						print 'ding ding ding ding'
-						print '*******************'
-						print 'We have a problem'
-						print 'the test list did not equal 1'
-						print sum(test_list)
 			else:
 				print 'the frame cut was empy, so I will calculate the scaled dispersion'
 				test_list = []
@@ -314,43 +311,30 @@ class argo_traj_data:
 				column_list.append(ii_index)
 				data_list.append(diagonal)
 				test_list.append(diagonal)
-				if abs(sum(test_list)-1)>0.01:
-						print 'ding ding ding ding'
-						print '*******************'
-						print 'We have a problem'
-						print 'the test list did not equal 1'
-						print sum(test_list)
-			if np.isnan(data_list).any():
-				print 'ding ding ding ding'
-				print '*******************'
-				print 'we have a problem'
-				print 'np.isnan(data_list).any()'
-				print frame
-				print frame_cut
-				raise
-			if (np.array(data_list)>1).any():
-				print 'ding ding ding ding'
-				print '*******************'
-				print 'we have a problem'
-				print '(np.array(data_list)>1).any()'
-				print frame
-				print frame_cut
-				raise		
-			if (np.array(data_list)<0).any():
-				print 'ding ding ding ding'
-				print '*******************'
-				print 'we have a problem'
-				print '(np.array(data_list)<0).any()'
-				print frame
-				print frame_cut
-				raise			
+			assert abs(sum(test_list)-1)<0.01	#ensure that all columns scale to 1
+			assert ~np.isnan(data_list).any()
+			assert (np.array(data_list)<=1).all()
+			assert (np.array(data_list)>=0).all()
+		
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		# self.transition_matrix = self.add_noise(self.transition_matrix)
 		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
-
 		if dump:
+			assert (np.abs(self.transition_matrix.todense().sum(axis=0)-1)<0.01).all() #this is in the dump subroutine for the case that it is recompiled for the data withholding experiment.
 			save_sparse_csr('./transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
 			save_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
+
+	def data_withholding(self):
+		mylist = traj_class.df_transition.Cruise.unique().tolist()
+		not_mylist = [mylist[i] for i in sorted(random.sample(xrange(len(mylist)), int(round(len(mylist)/10)))) ]
+		test_df = self.df[self.df.Cruise.isin(not_mylist)]
+		self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(not_mylist)]
+		self.df_transition = self.df_transition.reset_index(drop=True)
+		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
+			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
+		self.recompile_transition_matrix()
+		for cruise in test_df.Cruise.unique():
+			token = test_df[test_df.Cruise==cruise]
 
 	def add_noise(self,matrix,noise=0.05):
 		print 'adding matrix noise'
@@ -363,9 +347,10 @@ class argo_traj_data:
 
 	def rescale_matrix(self,matrix_):
 		print 'rescaling the matrix'
-		for column in range(matrix_.shape[1]):
-			matrix_[:,column] = matrix_[:,column]/matrix_[:,column].sum()
-		return matrix_
+		mat_sum = matrix_.todense().sum(axis=0)
+		scalefactor,dummy = np.meshgrid(1/mat_sum,1/mat_sum)
+		return scipy.sparse.csc_matrix(mat_sum*scalefactor)
+
 
 	def load_w(self,number,dump=True):
 
@@ -380,7 +365,7 @@ class argo_traj_data:
 			else:
 				self.load_w(number-1,dump=True)		# recursion to get to the first saved transition matrix 
 				self.w = self.w.dot(self.transition_matrix)		# advance the transition matrix once
-			self.w = self.rescale_matrix(self.w)
+			 	# self.w = self.rescale_matrix(self.w)
 
 			if dump:
 				save_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
@@ -408,7 +393,7 @@ class argo_traj_data:
 		ZZ = self.df_to_plottable(self.df)
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 		ZZ = np.ma.masked_equal(ZZ,0)
@@ -425,7 +410,7 @@ class argo_traj_data:
 		ZZ = self.df_to_plottable(pd.concat(frames))
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 		ZZ = np.ma.masked_equal(ZZ,0)
@@ -444,12 +429,12 @@ class argo_traj_data:
 		number_matrix_plot = self.transition_vector_to_plottable(k)
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 		# number_matrix_plot[number_matrix_plot>1000]=1000
 		number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)
-		m.pcolormesh(XX,YY,number_matrix_plot,vmin=0,vmax=150,cmap=plt.cm.magma)
+		m.pcolormesh(XX,YY,number_matrix_plot,vmin=0,vmax=80,cmap=plt.cm.magma)
 		plt.title('Transition Density',size=30)
 		plt.colorbar(label='Number of float transitions')
 		plt.savefig('./number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
@@ -462,7 +447,7 @@ class argo_traj_data:
 		k = np.diagonal(self.transition_matrix.todense())
 		transition_plot = self.transition_vector_to_plottable(k)
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 		transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0)
@@ -491,7 +476,7 @@ class argo_traj_data:
 
 		plt.figure(figsize=(10,10))
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		m.drawmapboundary(fill_color='grey')
 		XX,YY = m(self.X,self.Y)
@@ -568,7 +553,9 @@ class argo_traj_data:
 		lon_max = 180/self.degree_bins
 		east_west = []
 		north_south = []
-		for item in self.total_list:
+		k = len(self.total_list)
+		for n,item in enumerate(self.total_list):
+			print 'made it through ',n,' there are ',(k-n),' remaining'
 			lat,lon = item
 			e_w = (np.array(lon_list)-lon)/self.degree_bins
 			e_w[e_w>lon_max]=e_w[e_w>lon_max]-2*lon_max
@@ -602,8 +589,8 @@ class argo_traj_data:
 
 
 		m.drawcoastlines()
-		Y = np.arange(-68,66,6)
-		X = np.arange(-168,170,6)
+		Y = np.arange(-68,66,4)
+		X = np.arange(-162,162,4)
 		XX,YY = np.meshgrid(X,Y)
 		n_s = np.zeros(XX.shape)
 		e_w = np.zeros(XX.shape)
@@ -624,7 +611,10 @@ class argo_traj_data:
 				mask = (x!=0)|(y!=0) 
 				x = x[mask]
 				y = y[mask]
-				w,v = np.linalg.eig(np.cov(x,y))
+				try: 
+					w,v = np.linalg.eig(np.cov(x,y))
+				except:
+					continue
 				angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))
 				axis1 = 2*max(w)*np.sqrt(5.991)
 				axis2 = 2*min(w)*np.sqrt(5.991)
@@ -638,7 +628,10 @@ class argo_traj_data:
 					print 'Axis 2 is too big'
 					continue
 
-				poly = m.ellipse(lon, lat, axis1*200,axis2*200, 100,phi=angle, facecolor='green', zorder=3,alpha=0.35)
+				try:
+					poly = m.ellipse(lon, lat, axis1*20,axis2*20, 80,phi=angle, facecolor='green', zorder=3,alpha=0.35)
+				except ValueError:
+					continue
 		# east_west = self.transition_vector_to_plottable(np.sum(east_west,axis=0).tolist()[0])
 		# north_south = self.transition_vector_to_plottable(np.sum(north_south,axis=0).tolist()[0])
 		# self.number_matrix = load_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
@@ -650,7 +643,7 @@ class argo_traj_data:
 		# m.quiver(XX,YY,east_west,north_south,scale=25) # this is a plot for the tendancy of the residence time at a grid cell
 		e_w = np.ma.array(e_w,mask=(e_w==0))
 		n_s = np.ma.array(n_s,mask=(n_s==0))
-		m.quiver(XX,YY,e_w*10000,n_s*10000,scale=25)
+		m.quiver(XX,YY,e_w*5000,n_s*5000,scale=25)
 		plt.title('Variance Ellipses of Transition Matrix')
 
 	def diagnose_matrix(self,matrix,filename):
@@ -675,8 +668,8 @@ class argo_traj_data:
 		"""
 
 		try:
-			float_vector = np.load('soccom_initial_degree_bins_'+str(self.degree_bins)+'.npy')
-			dummy,indexes = zip(*np.argwhere(float_vector))
+			self.float_vector = np.load('soccom_initial_degree_bins_'+str(self.degree_bins)+'.npy')
+			dummy,indexes = zip(*np.argwhere(self.float_vector))
 		except IOError:
 			print 'initial soccom locations could not be loaded and need to be recompiled'
 			df = pd.read_pickle('soccom_all.pickle')
@@ -695,23 +688,23 @@ class argo_traj_data:
 			lats = [find_nearest(self.bins_lat,x) for x in df.Lat.values]
 			lons = [find_nearest(self.bins_lon,x) for x in df.Lon.values]
 			indexes = []
-			float_vector = np.zeros([1,len(self.total_list)])
+			self.float_vector = np.zeros([1,len(self.total_list)])
 			for x in zip(lats,lons):
 				try: 
 					indexes.append(self.total_list.index(list(x)))
-					float_vector[0,indexes[-1]]=1
+					self.float_vector[0,indexes[-1]]=1
 				except ValueError:	# this is for the case that the starting location of the the soccom float is not in the transition matrix
 					print 'I have incountered a value error and cannot continue...'
 					
 					raise
-			np.save('soccom_initial_degree_bins_'+str(self.degree_bins)+'.npy',float_vector)
+			np.save('soccom_initial_degree_bins_'+str(self.degree_bins)+'.npy',self.float_vector)
+
 
 		if individual:
-
 			indexes = [indexes[individual]]
-			float_vector = np.zeros([1,len(self.total_list)])
-			float_vector[0,indexes[-1]]=1
-		float_vector = scipy.sparse.csc_matrix(float_vector)
+			self.float_vector = np.zeros([1,len(self.total_list)])
+			self.float_vector[0,indexes[-1]]=1
+		float_vector = scipy.sparse.csc_matrix(self.float_vector)
 		float_result = self.w.dot(scipy.sparse.csr_matrix(float_vector.T))
 		t = []
 
@@ -729,13 +722,13 @@ class argo_traj_data:
 				t = Basemap(projection='mill',llcrnrlat=lllat,urcrnrlat=urlat,llcrnrlon=lllon,urcrnrlon=urlon,resolution='i',lon_0=lon_0,fix_aspect=False)
 			else:
 				t = Basemap(projection='cyl',lon_0=0,fix_aspect=False,)
-			t.fillcontinents(color='coral',lake_color='aqua')
+			# t.fillcontinents(color='coral',lake_color='aqua')
 			t.drawcoastlines()
 			for index in indexes:
 				lat,lon = self.total_list[index]
 				x,y = t(lon,lat)
 				t.plot(x,y,'b*',markersize=14)
-		return t,float_result
+		return t,float_result.todense()
 
 
 	def plot_latest_soccom_locations(self,debug = False,individual=False):
@@ -780,7 +773,7 @@ class argo_traj_data:
 		co2_plot = abs(self.transition_vector_to_plottable(co2_vector))
 		plt.figure()
 		m = Basemap(projection='cyl',fix_aspect=False)
-		m.fillcontinents(color='coral',lake_color='aqua')
+		# m.fillcontinents(color='coral',lake_color='aqua')
 		m.drawcoastlines()
 		XX,YY = m(self.X,self.Y)
 
@@ -789,28 +782,26 @@ class argo_traj_data:
 
 
 
-	def get_optimal_float_locations(self,target_vector):
+	def get_optimal_float_locations(self,target_vector,desired_vector_in_plottable=True):
 		""" accepts a target vecotr in sparse matrix form, returns the ideal float locations and weights to sample that"""
 
-		self.w[self.w<0.007]=0
+		# self.w[self.w<0.007]=0
 		target_vector = abs(target_vector/target_vector.max()) # normalize the target_vector
 		m,soccom_float_result = self.get_latest_soccom_float_locations(plot=True)
 		float_result = soccom_float_result/soccom_float_result.max()
 		target_vector = target_vector-float_result
-		target_vector = target_vector
 		target_vector = np.array(target_vector)
 		print type(self.w)
 		print type(target_vector)
-		desired_vector, residual = scipy.optimize.nnls(np.matrix(self.w.todense()),np.squeeze(target_vector))
-		print len(desired_vector)
+		#desired_vector, residual = scipy.optimize.nnls(np.matrix(self.w.todense()),np.squeeze(target_vector))
+		optimize_fun = scipy.optimize.lsq_linear(self.w,np.squeeze(target_vector),bounds=(0,self.degree_bins),verbose=2)
+		desired_vector = optimize_fun.x
 
-		truth_list = np.array((desired_vector>0).astype(int))
-		truth_list.reshape([len(self.total_list),1])
-
-		print np.array(self.total_list)[desired_vector>0]
-		y,x = zip(*np.array(self.total_list)[desired_vector>0])
-		return (m,x,y,self.transition_vector_to_plottable(desired_vector))
-
+		y,x = zip(*np.array(self.total_list)[desired_vector>0.1])
+		if desired_vector_in_plottable:
+			return (m,x,y,self.transition_vector_to_plottable(desired_vector))
+		else:
+			return (m,x,y,desired_vector, target_vector)
 
 	def cm2p6(self,filename):
 		x = np.load('xt_ocean')
@@ -825,18 +816,38 @@ class argo_traj_data:
 			field_vector[n] = shifted_field[lat_index,lon_index]
 		return field_vector
 
-	def pco2_var_plot(self):
+	def pco2_var_plot(self,cost_plot=False):
 		plt.figure()
+		if cost_plot:
+			plt.subplot(2,1,1)
 		field_vector = self.cm2p6('mean_pco2.dat')
 		field_plot = abs(self.transition_vector_to_plottable(field_vector))
-		m,x,y,desired_vector =  self.get_optimal_float_locations(field_vector)
+		m,x,y,desired_vector,target_vector =  self.get_optimal_float_locations(field_vector,desired_vector_in_plottable=(not cost_plot)) #if cost_plot, the vector will return desired vector in form for calculations
 		XX,YY = m(self.X,self.Y)
 		m.pcolormesh(XX,YY,np.log(field_plot),cmap=plt.cm.Purples) # this is a plot for the tendancy of the residence time at a grid cell
-		m.scatter(x,y,marker='*',color='y',s=24)
+		m.scatter(x,y,marker='*',color='g',s=34)
+		if cost_plot:
+			float_number = []
+			variance_misfit = []
+			total_var = np.sum(target_vector.dot(target_vector.T))
+			for limit in np.arange(1 ,0,-0.01):
+				print 'limit is ',limit
+				
+				token_vector = np.zeros(len(desired_vector))
+				token_vector[desired_vector>limit] = [math.ceil(x) for x in desired_vector[desired_vector>limit]]
+				float_number.append(token_vector.sum())
+				token_result = target_vector - self.w.todense().dot(np.matrix(token_vector).T)
+				token_result[token_result<0] = 0
+				variance_misfit.append(100-np.sum(token_result.dot(token_result.T))/total_var*100)
+				print 'variance misfit is ',variance_misfit[-1]
+			plt.subplot(2,1,2)
+			plt.plot(float_number,variance_misfit)
+			plt.ylabel('pCO$^2$ Variance Constrained (%)')
+			plt.xlabel('Number of Additional Floats Deployed')
 		plt.show()
 
 		
-	def o2_var_plot(self,line=None):
+	def o2_var_plot(self,line=([0, -50], [-20, 20])):
 		plt.figure()
 		if line:
 			plt.subplot(2,1,1)
@@ -845,7 +856,7 @@ class argo_traj_data:
 		m,x,y,desired_vector =  self.get_optimal_float_locations(field_vector)
 		XX,YY = m(self.X,self.Y)
 		m.pcolormesh(XX,YY,np.log(field_plot),cmap=plt.cm.Reds) # this is a plot for the tendancy of the residence time at a grid cell
-		m.scatter(x,y,marker='*',color='y',s=24)
+		# m.scatter(x,y,marker='*',color='g',s=34)
 		if line:
 			lat,lon = line
 			x,y = m(lon,lat)
@@ -856,9 +867,8 @@ class argo_traj_data:
 			points = np.array(zip(lat,lon))
 			grid_z0 = griddata((self.X.flatten(),self.Y.flatten()),desired_vector.flatten(),points,method='linear')
 			plt.plot((lat-lat.min())*111,grid_z0)
-			plt.xlabel('distance of cruise track (km)')
-			plt.ylabel('deployment goodness')
-			plt.suptitle('Cruise Planning')
+			plt.xlabel('Distance Along Cruise Track (km)')
+			plt.ylabel('Normalized Variance Constrained by Deployment')
 		plt.show()
 
 	def hybrid_var_plot(self):
@@ -941,43 +951,46 @@ class argo_traj_data:
 			self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 			save_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
 
-		def califnia_plot_for_lynne(self):
-			locs = pd.read_excel('../california_current_float_projection/ca_current_test_locations_2018-05-14.xlsx')
-			for n,(lat,lon) in locs[['lat','lon']].iterrows():
-				lon = -lon
-				lat1 = find_nearest(self.bins_lat,lat)
-				lon1 = find_nearest(self.bins_lon,lon)
-				try:
-					index = self.total_list.index([lat1,lon1])
-				except ValueError:
-					print 'lat and lon not in index'
-					continue
-				for num in np.arange(12):
-					print 'num is ',num
-					self.load_w(num)
-					m = Basemap(llcrnrlon=-150.,llcrnrlat=21.,urcrnrlon=-115.,urcrnrlat=48,projection='cyl')
-					m.fillcontinents(color='coral',lake_color='aqua')
-					m.drawcoastlines()
-					XX,YY = m(self.X,self.Y)
-					x,y = m(lon,lat)
-					m.plot(x,y,'yo',markersize=14)
-					float_vector = np.zeros([1,len(self.total_list)])
+	def california_plot_for_lynne(self):
+		locs = pd.read_excel('../california_current_float_projection/ca_current_test_locations_2018-05-14.xlsx')
+		for n,(lat,lon) in locs[['lat','lon']].iterrows():
+			lon = -lon
+			lat1 = find_nearest(self.bins_lat,lat)
+			lon1 = find_nearest(self.bins_lon,lon)
+			try:
+				index = self.total_list.index([lat1,lon1])
+			except ValueError:
+				print 'lat and lon not in index'
+				continue
+			for num in np.arange(12):
+				print 'num is ',num
+				self.load_w(num)
+				m = Basemap(llcrnrlon=-150.,llcrnrlat=21.,urcrnrlon=-115.,urcrnrlat=48,projection='cyl')
+				# m.fillcontinents(color='coral',lake_color='aqua')
+				m.drawcoastlines()
+				XX,YY = m(self.X,self.Y)
+				x,y = m(lon,lat)
+				m.plot(x,y,'yo',markersize=14)
+				float_vector = np.zeros([1,len(self.total_list)])
 
-					float_vector[0,index]=1
-					float_vector = scipy.sparse.csc_matrix(float_vector)
-					float_result = self.w.dot(scipy.sparse.csr_matrix(float_vector.T))
-					float_result = self.transition_vector_to_plottable(float_result.todense().reshape(len(self.total_list)).tolist()[0])
+				float_vector[0,index]=1
+				float_vector = scipy.sparse.csc_matrix(float_vector)
+				float_result = self.w.dot(scipy.sparse.csr_matrix(float_vector.T))
+				float_result = self.transition_vector_to_plottable(float_result.todense().reshape(len(self.total_list)).tolist()[0])
 
-					XX,YY = m(self.X,self.Y)
-					m.pcolormesh(XX,YY,float_result,vmax=0.05,vmin=0,cmap=plt.cm.Greens)
-					plt.savefig('lynne_plot_'+str(n)+'_w_'+str(num))
-					plt.close()
+				XX,YY = m(self.X,self.Y)
+				m.pcolormesh(XX,YY,float_result,vmax=0.05,vmin=0,cmap=plt.cm.Greens)
+				plt.savefig('lynne_plot_'+str(n)+'_w_'+str(num))
+				plt.close()
 
 
 
-traj_class = argo_traj_data(date_span_limit=60)
-traj_class.quiver_plot()
-plt.show()
+traj_class = argo_traj_data(degree_bins=4,date_span_limit=60)
+# traj_class.load_w(5)
+# traj_class.pco2_var_plot(line_plot=True)
+# plt.show()
+# traj_class.quiver_plot(traj_class.transition_matrix)
+# plt.show()
 
 
 
