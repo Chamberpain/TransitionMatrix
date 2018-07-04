@@ -9,6 +9,7 @@ from matplotlib.patches import Polygon
 from mpl_toolkits.basemap import pyproj
 import matplotlib.colors
 import sys,os
+import glob
 from collections import OrderedDict
 # sys.path.append(os.path.abspath("../"))
 # import soccom_proj_settings
@@ -324,17 +325,61 @@ class argo_traj_data:
 			save_sparse_csr('./transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
 			save_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
 
-	def data_withholding(self):
+
+	def data_withholding_routine(self,test_df):
+		pdf_list = []
+		cruise_len = len(test_df.Cruise.unique())
+		for t,cruise in enumerate(test_df.Cruise.unique()):
+			print cruise_len-t,' cruises remaining'
+			token = test_df[test_df.Cruise==cruise]
+			token['days from start'] = (token.Date-token.Date.min()).dt.days
+			try:
+				start_index= self.total_list.index(list(token.bin_index.values[0]))
+			except ValueError:
+				pdf_list+=[0,0,0,0,0,0]
+				print 'i have incountered at error, adding zeros to the pdf list'
+			for k in range(7)[1:]:
+				self.load_w(k)
+				pdf = self.w[:,start_index].todense()
+				pdf_mean = pdf[pdf>0].mean()
+				delta_days = find_nearest(token['days from start'].values,self.date_span_limit*k) 
+				assert delta_days>=0
+				try:
+					end_index = self.total_list.index(list(token[token['days from start']==delta_days].bin_index.values[0]))
+					pdf_list.append(pdf[end_index].item()/pdf_mean)
+				except ValueError:
+					pdf_list.append(0)
+					print 'i have encountered an error, adding a zero to the list'
+		return pdf_list
+
+	def z_test(self,p_1,p_2,n_1,n_2):
+		p_1 = np.ma.array(p_1,mask = (n_1==0))
+		n_1 = np.ma.array(n_1,mask = (n_1==0))
+		p_2 = np.ma.array(p_2,mask = (n_2==0))
+		n_2 = np.ma.array(n_2,mask = (n_2==0))		
+		z_stat = (p_1-p_2)/np.sqrt(self.transition_matrix.todense()*(1-self.transition_matrix.todense())*(1/n_1+1/n_2))
+		assert (np.abs(z_stat)<1.96).data.all()
+
+	def data_withholding_setup(self):
+		self.delete_w()
 		mylist = traj_class.df_transition.Cruise.unique().tolist()
-		not_mylist = [mylist[i] for i in sorted(random.sample(xrange(len(mylist)), int(round(len(mylist)/10)))) ]
-		test_df = self.df[self.df.Cruise.isin(not_mylist)]
+		not_mylist = [mylist[i] for i in sorted(random.sample(xrange(len(mylist)), int(round(len(mylist)/20)))) ]
+		df_holder = self.df[self.df.Cruise.isin(not_mylist)]
+		null_hypothesis = self.data_withholding_routine(df_holder)
+
+		self.delete_w()
 		self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(not_mylist)]
 		self.df_transition = self.df_transition.reset_index(drop=True)
 		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
 			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
-		self.recompile_transition_matrix()
-		for cruise in test_df.Cruise.unique():
-			token = test_df[test_df.Cruise==cruise]
+		self.recompile_transition_matrix(dump=False)
+		data_withheld = self.data_withholding_routine(df_holder)
+		plt.hist(null_hypothesis,bins=50,density=True,color='r',alpha=0.5,label='Null Hypothesis')
+		plt.hist(data_withheld,bins=50,density=True,color='b',alpha=0.5,label='Data Withheld')
+		plt.legend()
+		plt.xlabel('Normalized Probability')
+		plt.title('Data Withholding Experiment Comparison')
+		plt.show()
 
 	def add_noise(self,matrix,noise=0.05):
 		print 'adding matrix noise'
@@ -350,6 +395,11 @@ class argo_traj_data:
 		mat_sum = matrix_.todense().sum(axis=0)
 		scalefactor,dummy = np.meshgrid(1/mat_sum,1/mat_sum)
 		return scipy.sparse.csc_matrix(mat_sum*scalefactor)
+
+
+	def delete_w(self):
+		for w in glob.glob(os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_*.npz'):
+			os.remove(w)
 
 
 	def load_w(self,number,dump=True):
@@ -513,6 +563,9 @@ class argo_traj_data:
 		self.matrix_compare(transition_matrix_argos,transition_matrix_gps,number_matrix_argos,number_matrix_gps,'Dataset Difference (GPS - ARGOS)','./dataset_difference/dataset_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 		self.diagnose_matrix(transition_matrix_argos,'./dataset_difference/argos_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 		self.diagnose_matrix(transition_matrix_gps,'./dataset_difference/gps_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.z_test(transition_matrix_gps.todense(),transition_matrix_argos.todense(),number_matrix_gps.todense(),number_matrix_argos.todense())
+
+
 
 	def seasonal_compare(self):
 		print 'I am now comparing the seasonal nature of the dataset'
@@ -547,6 +600,7 @@ class argo_traj_data:
 		self.number_matrix=number_matrix_winter
 		self.transition_matrix_plot('winter',load_number_matrix=False)
 		self.matrix_compare(transition_matrix_winter,transition_matrix_summer,number_matrix_winter,number_matrix_summer,'Seasonal Difference (Summer - Winter)','./seasonal/seasonal_difference_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+		self.z_test(transition_matrix_summer.todense(),transition_matrix_winter.todense(),number_matrix_summer.todense(),number_matrix_winter.todense())
 
 	def get_direction_matrix(self):
 		lat_list, lon_list = zip(*self.total_list)
@@ -834,7 +888,7 @@ class argo_traj_data:
 				print 'limit is ',limit
 				
 				token_vector = np.zeros(len(desired_vector))
-				token_vector[desired_vector>limit] = [math.ceil(x) for x in desired_vector[desired_vector>limit]]
+				token_vector[desired_vector>limit] = [math.ceil(k) for k in desired_vector[desired_vector>limit]]
 				float_number.append(token_vector.sum())
 				token_result = target_vector - self.w.todense().dot(np.matrix(token_vector).T)
 				token_result[token_result<0] = 0
@@ -847,16 +901,18 @@ class argo_traj_data:
 		plt.show()
 
 		
-	def o2_var_plot(self,line=([0, -50], [-20, 20])):
+	def o2_var_plot(self,line=([20, -55], [-30, -15])):
+		floor = 10**-11
 		plt.figure()
 		if line:
 			plt.subplot(2,1,1)
 		field_vector = self.cm2p6('mean_o2.dat')
+		field_vector[field_vector<floor]=floor
 		field_plot = abs(self.transition_vector_to_plottable(field_vector))
 		m,x,y,desired_vector =  self.get_optimal_float_locations(field_vector)
 		XX,YY = m(self.X,self.Y)
 		m.pcolormesh(XX,YY,np.log(field_plot),cmap=plt.cm.Reds) # this is a plot for the tendancy of the residence time at a grid cell
-		# m.scatter(x,y,marker='*',color='g',s=34)
+		m.scatter(x,y,marker='*',color='g',s=34)
 		if line:
 			lat,lon = line
 			x,y = m(lon,lat)
@@ -868,7 +924,7 @@ class argo_traj_data:
 			grid_z0 = griddata((self.X.flatten(),self.Y.flatten()),desired_vector.flatten(),points,method='linear')
 			plt.plot((lat-lat.min())*111,grid_z0)
 			plt.xlabel('Distance Along Cruise Track (km)')
-			plt.ylabel('Normalized Variance Constrained by Deployment')
+			plt.ylabel('Variance Constrained')
 		plt.show()
 
 	def hybrid_var_plot(self):
