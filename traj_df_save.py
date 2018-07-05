@@ -4,7 +4,10 @@ import datetime
 import scipy.io
 import pandas as pd
 import time
+import numpy as np
 
+f = open('traj_df_changelog.txt','w')
+degree_dist = 111.7
 
 def time_parser(juld_list):
 	ref_date = datetime.datetime(1950,1,1,1,1)
@@ -22,28 +25,45 @@ def frame_return(file_name):
 
 	cruise = traj_dict['subwmo'][0]
 	positioning_type = traj_dict['subtrans_sys'][0]
-	assert ~all(v == len(lon_i) for v in [len(lon_i),len(lon_f),len(lat_i),len(lat_f),len(date_i),len(date_f),len(pres)])
+	assert ~all(v == len(lon_i) for v in [len(lon_i),len(lon_f),len(lat_i),len(lat_f),len(date_i),len(date_f),len(pres)])	# all lists have to be the same length
 	df_holder = pd.DataFrame({'position type':positioning_type,'Cruise':cruise,'lon_i':lon_i,'Lon':lon_f,'lat_i':lat_i,'Lat':lat_f,'date_i':date_i,'Date':date_f,'pres':pres})
-	if len(df_holder)==0:
-		return df_holder
-	hour_diff = df_holder.Date.diff().dt.days*24+df_holder.Date.diff().dt.seconds/3600.
-	df_holder['Lat Speed']= df_holder.Lat.diff()/hour_diff
-	df_holder['Lon Speed']= df_holder.Lon.diff()/hour_diff
 
-	if ((df_holder['Lat Speed'].abs()>.05)&(df_holder['Lon Speed'].abs()<.1)).any():
+	if df_holder.empty:
+		f.write(str(cruise)+' was empty \n')
+		return df_holder
+	df_holder['hour_diff'] = df_holder.Date.diff().dt.days*24+df_holder.Date.diff().dt.seconds/3600.
+	if (df_holder.hour_diff.tail(len(df_holder)-1)<0).any():
+		df_holder = df_holder.sort_values(['Date']).reset_index(drop=True)
+		df_holder['hour_diff'] = df_holder.Date.diff().dt.days*24+df_holder.Date.diff().dt.seconds/3600.
+
+		f.write(str(cruise)+' resorted because date order not correct \n')
+		print 'I am resorting the dates because they were not correct'
+	assert (df_holder.hour_diff.tail(len(df_holder)-1)>0).all()	#the first hour diff will be zero and must be filtered out.
+	df_holder['Lat Speed']= df_holder.Lat.diff()/df_holder['hour_diff']*degree_dist
+	
+
+	df_holder['Lon Diff']=df_holder.Lon.diff().abs()
+	if not df_holder[df_holder['Lon Diff']>180].empty:
+		df_holder.loc[df_holder['Lon Diff']>180,'Lon Diff']=df_holder[df_holder['Lon Diff']>180]['Lon Diff']-360
+	df_holder['Lon Speed']= np.cos(np.deg2rad(df_holder.Lat))*df_holder['Lon Diff']/df_holder['hour_diff']*degree_dist
+	df_holder['Speed'] = np.sqrt(df_holder['Lat Speed']**2 + df_holder['Lon Speed']**2)
+	if (df_holder.Speed>6).any():
+
 		print 'Min time diff in days is ',df_holder.Date.diff().dt.days.min()
 		print 'Min time diff in seconds is ',df_holder.Date.diff().dt.seconds.min()
 		print 'Min time diff is hours is ',(df_holder.Date.diff().dt.seconds/3600.).min()
-		print 'Max lon diff is ',df_holder.Lon.diff().abs().max()		
+		print 'Max lon diff is ',df_holder['Lon Diff'].max()		
 		print 'Max lat diff is ',df_holder.Lat.diff().abs().max()
 		print 'Max lat speed is ',df_holder['Lat Speed'].abs().max()
 		print 'Max lon speed is ',df_holder['Lon Speed'].abs().max()
+		print 'Max speed is ',df_holder['Speed'].abs().max()
 		print 'I am returning the empty set'
+		f.write(str(cruise)+' is rejected because the calculated speed is outside the 6 km/hour tolerance \n')
 		return pd.DataFrame()
 	else:
 		return df_holder
 
-data_directory = '/Users/paulchamberlain/Data/Traj/mat/'
+data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/Traj/mat/'
 frames = []
 matches = []
 float_type = ['Argo']
@@ -59,7 +79,12 @@ for n, match in enumerate(matches):
 	except: 
 		raise
 df = pd.concat(frames)
-df = df[(df.pres<1200)&(df.pres>800)]
-df = df[(df['Lat Speed'].abs()<.8)&(df['Lon Speed'].abs()<.8)]
-df = df.reset_index(drop=True)
-df.to_pickle('/Users/paulchamberlain/Data/all_argo_traj')
+
+############## Tests ################
+# assert df.pres.min()>800
+# assert df.pres.max()<1200
+assert (df.dropna(subset=['Speed']).Speed>=0).all()
+
+
+f.close()
+df.to_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_traj.pickle')
