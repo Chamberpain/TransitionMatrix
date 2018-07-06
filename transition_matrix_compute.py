@@ -109,11 +109,17 @@ def load_sparse_csr(filename):
     return scipy.sparse.csr_matrix((loader['data'], loader['indices'], loader['indptr']),
                       shape=loader['shape']).T #this transpose is very important because otherwise these transition matrices load wrong and send flow the wrong way.
 
-__file__ = '/Users/paulchamberlain/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
+__file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
 
 class argo_traj_data:
-	def __init__(self,degree_bins=2,date_span_limit=30):
+	def __init__(self,degree_bins=1,date_span_limit=60):
 		print 'I have started argo traj data'
+
+		self.df_transition_string = os.getenv("HOME")+'/transition_df_degree_bins_'+str(degree_bins)+'.pickle'
+		self.transition_matrix_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'+'/transition_matrix_data/transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz'
+		self.all_argo_traj_df_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_traj.pickle'
+
+
 		self.degree_bins = float(degree_bins)
 		self.date_span_limit = date_span_limit
 		self.bins_lat = np.arange(-90,90.1,self.degree_bins).tolist()
@@ -122,7 +128,7 @@ class argo_traj_data:
 			print '180 is not divisable by the degree bins chosen'		#need to add this logic for the degree bin choices that do not end at 180. 
 			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
-		self.df = pd.read_pickle(os.path.dirname(os.path.realpath(__file__))+'/global_argo_traj').sort_values(by=['Cruise','Date'])
+		self.df = pd.read_pickle(self.all_argo_traj_df_string).sort_values(by=['Cruise','Date'])
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
 		self.df = self.df.dropna(subset=['bins_lon','bins_lat']) # get rid of binned values outside of the domain
@@ -136,7 +142,7 @@ class argo_traj_data:
 		assert self.df.Lat.min() >=-90
 
 		try:
-			self.df_transition = pd.read_pickle(os.path.dirname(os.path.realpath(__file__))+'/transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
+			self.df_transition = pd.read_pickle(self.df_tansition_string)
 			assert (self.df_transition['date span']>=0).all() #require time to go in the right direction
 
 		except IOError: #this is the case that the file could not load
@@ -150,7 +156,7 @@ class argo_traj_data:
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
 		try: # try to load the transition matrix
-			self.transition_matrix = load_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			self.transition_matrix = load_sparse_csr(transition_matrix_string)
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
@@ -175,7 +181,7 @@ class argo_traj_data:
 		date_span_list = []
 		start_date_list = []
 		position_type_list = []
-		time_delta_list = np.arange(15,300,15)
+		time_delta_list = np.arange(20,300,20)
 		k = len(self.df.Cruise.unique())
 		for n,cruise in enumerate(self.df.Cruise.unique()):
 			print 'cruise is ',cruise,'there are ',k-n,' cruises remaining'
@@ -184,7 +190,7 @@ class argo_traj_data:
 			df_holder = self.df[mask]
 			max_date = df_holder.Date.max()
 			df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
-			position_type = df_holder['Position Type'].values[0]
+			position_type = df_holder['position type'].values[0]
 			group_library = df_holder.groupby('diff').groups
 			diff_group = np.sort(df_holder.groupby('diff').groups.keys()).tolist()
 			diff_group.pop() #this is the last grid box the float moved into and we can assume it died
@@ -229,7 +235,7 @@ class argo_traj_data:
 		df_dict['end bin'] = end_bin_list
 		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
-		self.df_transition.to_pickle('transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
+		self.df_transition.to_pickle(df_transiton_string)
 
 	def identify_problems_df_transition(self,plot=False):
 		degree_max = self.date_span_limit/3.
