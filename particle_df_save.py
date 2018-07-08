@@ -38,3 +38,4 @@ for i,lon in enumerate(XC[:-1]):
 	print 'lon = ',lon
 	for j,lat in enumerate(YC[:-1]):
 		df.loc[(df.bins_lat==lat)&(df.bins_lon==lon),'Depth']=Depth[i,j]
+df.to_pickle(output_file_name)
