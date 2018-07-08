@@ -110,12 +110,13 @@ def load_sparse_csr(filename):
                       shape=loader['shape']).T #this transpose is very important because otherwise these transition matrices load wrong and send flow the wrong way.
 
 __file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
+bad_cruise_list = ['1900857','1900978','1901149','1901552','3900743','3901062','4901246','5903883','6900938','6901004']
 
 class argo_traj_data:
 	def __init__(self,degree_bins=1,date_span_limit=60):
 		print 'I have started argo traj data'
 
-		self.df_transition_string = os.getenv("HOME")+'/transition_df_degree_bins_'+str(degree_bins)+'.pickle'
+		self.df_transition_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/transition_df_degree_bins_'+str(degree_bins)+'.pickle'
 		self.transition_matrix_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'+'/transition_matrix_data/transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz'
 		self.all_argo_traj_df_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_traj.pickle'
 
@@ -129,6 +130,7 @@ class argo_traj_data:
 			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 		self.df = pd.read_pickle(self.all_argo_traj_df_string).sort_values(by=['Cruise','Date'])
+		self.df = self.df[~self.df.Cruise.isin(bad_cruise_list)]
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
 		self.df = self.df.dropna(subset=['bins_lon','bins_lat']) # get rid of binned values outside of the domain
@@ -235,17 +237,16 @@ class argo_traj_data:
 		df_dict['end bin'] = end_bin_list
 		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
-		self.df_transition.to_pickle(df_transiton_string)
+		self.df_transition.to_pickle(self.df_transition_string)
 
 	def identify_problems_df_transition(self,plot=False):
 		degree_max = self.date_span_limit/3.
 		lat1,lon1 = zip(*self.df_transition['start bin'].values)
 		lat2,lon2 = zip(*self.df_transition[self.end_bin_string].values)
-		lat_diff = np.array(lat1)-np.array(lat2)
-		lon_diff = np.array(lon1)-np.array(lon2)
-		lon_diff[lon_diff<-180] = lon_diff[lon_diff<-180]+360
-		lon_diff[lon_diff>180] = lon_diff[lon_diff>180]-360
-		distance = np.sqrt((lat_diff*np.cos(lat1))**2+lon_diff**2)
+		lat_diff = abs(np.array(lat1)-np.array(lat2))
+		lon_diff = abs(np.array(lon1)-np.array(lon2))
+		lon_diff[lon_diff>180] = abs(lon_diff[lon_diff>180]-360)
+		distance = np.sqrt((lon_diff*np.cos(lat1))**2+lat_diff**2)
 		self.df_transition['distance_check'] = distance 
 		cruise_list = self.df_transition[self.df_transition.distance_check>degree_max].Cruise.unique()
 		if plot:
