@@ -115,11 +115,7 @@ bad_cruise_list = ['1900857','1900978','1901149','1901552','3900743','3901062','
 class argo_traj_data:
 	def __init__(self,degree_bins=1,date_span_limit=60):
 		print 'I have started argo traj data'
-
-		self.df_transition_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/transition_df_degree_bins_'+str(degree_bins)+'.pickle'
-		self.transition_matrix_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'+'/transition_matrix_data/transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz'
-		self.all_argo_traj_df_string = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_traj.pickle'
-
+		self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'
 
 		self.degree_bins = float(degree_bins)
 		self.date_span_limit = date_span_limit
@@ -144,7 +140,7 @@ class argo_traj_data:
 		assert self.df.Lat.min() >=-90
 
 		try:
-			self.df_transition = pd.read_pickle(self.df_tansition_string)
+			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(degree_bins)+'.pickle')
 			assert (self.df_transition['date span']>=0).all() #require time to go in the right direction
 
 		except IOError: #this is the case that the file could not load
@@ -158,7 +154,7 @@ class argo_traj_data:
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
 		try: # try to load the transition matrix
-			self.transition_matrix = load_sparse_csr(transition_matrix_string)
+			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
@@ -237,7 +233,7 @@ class argo_traj_data:
 		df_dict['end bin'] = end_bin_list
 		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
-		self.df_transition.to_pickle(self.df_transition_string)
+		self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(degree_bins)+'.pickle')
 
 	def identify_problems_df_transition(self,plot=False):
 		degree_max = self.date_span_limit/3.
@@ -329,8 +325,8 @@ class argo_traj_data:
 		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
 		if dump:
 			assert (np.abs(self.transition_matrix.todense().sum(axis=0)-1)<0.01).all() #this is in the dump subroutine for the case that it is recompiled for the data withholding experiment.
-			save_sparse_csr('./transition_matrix_data/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
-			save_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
+			save_sparse_csr(self.base_file+'transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
+			save_sparse_csr(self.base_file+'number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
 
 
 	def data_withholding_routine(self,test_df):
@@ -1048,7 +1044,7 @@ class argo_traj_data:
 
 
 
-traj_class = argo_traj_data(degree_bins=4,date_span_limit=60)
+traj_class = argo_traj_data()
 # traj_class.load_w(5)
 # traj_class.pco2_var_plot(line_plot=True)
 # plt.show()
