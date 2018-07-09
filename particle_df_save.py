@@ -4,6 +4,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.io
 
+omega = 7.292*10**-5
+
 data_file_name = os.getenv("HOME")+'/iCloud/Data/Raw/SOSE/particle_release/SO_RAND_0001.XYZ.0000000001.0003153601.data'
 grid_file_name = os.getenv("HOME")+'/iCloud/Data/Raw/SOSE/grid.mat'
 output_file_name = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose_particle_df.pickle'
@@ -38,4 +40,12 @@ for i,lon in enumerate(XC[:-1]):
 	print 'lon = ',lon
 	for j,lat in enumerate(YC[:-1]):
 		df.loc[(df.bins_lat==lat)&(df.bins_lon==lon),'Depth']=Depth[i,j]
+df['PV']=np.sin(np.deg2rad(df.Lat))*omega*2/df.Depth
+frames = []
+for cruise in df.Cruise.unique():
+	print 'we are on cruise ',cruise
+	df_holder = df[df.Cruise==cruise]
+	df_holder['PV Diff'] = df_holder.PV.diff()
+	frames.append(df_holder)
+df = pd.concat(frames)
 df.to_pickle(output_file_name)
