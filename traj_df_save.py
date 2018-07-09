@@ -79,7 +79,8 @@ for n, match in enumerate(matches):
 	except: 
 		raise
 df = pd.concat(frames)
-
+df.loc[df['position type'].isin(['GPS     ','IRIDIUM ']),'position type'] = 'GPS'
+df.loc[df['position type'].isin(['ARGOS   ']),'position type'] = 'ARGOS'
 ############## Tests ################
 # assert df.pres.min()>800
 # assert df.pres.max()<1200
