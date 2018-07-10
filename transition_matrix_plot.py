@@ -382,7 +382,7 @@ class argo_traj_data(argo_traj_data):
         except IOError: #this is the case that the file could not load
             print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
             self.recompile_transition_df(dump=False)
-            self.df_transition.to_pickle(self.base_file+'sose_transition_df_degree_bins_'+str(degree_bins)+'.pickle')
+            self.df_transition.to_pickle(self.base_file+'sose_transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
         self.df_transition = self.df_transition.dropna(subset=[self.end_bin_string])
         self.identify_problems_df_transition()
         while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]): #need to loop this
@@ -390,11 +390,11 @@ class argo_traj_data(argo_traj_data):
         self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
         try: # try to load the transition matrix
-            self.transition_matrix = load_sparse_csr(self.base_file+'sose_transition_matrix_degree_bins_'+str(float(degree_bins))+'_time_step_'+str(date_span_limit)+'.npz')
+            self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/sose_transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
         except IOError: # if the matrix cannot load, recompile
             print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
             self.recompile_transition_matrix(dump=False)
-            save_sparse_csr(self.base_file+'sose_transition_matrix_degree_bins_'+str(float(degree_bins))+'_time_step_'+str(date_span_limit)+'.npz',self.transition_matrix)
+            save_sparse_csr(self.base_file+'transition_matrix/sose_transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz',self.transition_matrix)
 
     def get_direction_matrix(self):
         """
@@ -783,5 +783,3 @@ class argo_traj_data(argo_traj_data):
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
 traj_class = argo_traj_data()
-print traj_class.degree_bins
-traj_class.SOSE_transition_matrix_plot()
