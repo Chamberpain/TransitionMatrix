@@ -56,9 +56,6 @@ def recompile_map_files(type_):
 	np.save(file_path_dict[type_],pv_diff_map)
 	return pv_diff_map
 
-
-
-
 def pv_difference_map(type_):
 	try:
 		pv_diff_map = np.load(file_path_dict[type_])

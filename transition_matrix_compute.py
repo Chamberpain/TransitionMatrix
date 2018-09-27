@@ -31,12 +31,12 @@ class argo_traj_data:
 	def __init__(self,degree_bins=1,date_span_limit=60):
 		print 'I have started argo traj data'
 		self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'
-		self.degree_bins = float(degree_bins)
+		self.degree_bins = int(degree_bins)
 		self.date_span_limit = date_span_limit
 		self.bins_lat = np.arange(-90,90.1,self.degree_bins).tolist()
 		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
 		if 180.0 not in self.bins_lon:
-			print '180 is not divisable by the degree bins chosen'		#need to add this logic for the degree bin choices that do not end at 180. 
+			print '180 is not divisable by the degree bins chosen'		#need to add this logic for the degree bin choices that do not end at 180.
 			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 		self.df = pd.read_pickle(self.base_file+'all_argo_traj.pickle').sort_values(by=['Cruise','Date'])
@@ -67,7 +67,7 @@ class argo_traj_data:
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
 		try: # try to load the transition matrix
-			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(float(degree_bins))+'_time_step_'+str(date_span_limit)+'.npz')
+			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
@@ -140,11 +140,13 @@ class argo_traj_data:
 		df_dict['date span'] = date_span_list
 		self.df_transition = pd.DataFrame(df_dict)
 		if dump:
-			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(degree_bins)+'.pickle')
+			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
 	def identify_problems_df_transition(self,plot=False):
 		"""
 		Initiates tests to make sure the transition matrix has reasonable statistics
+
+		todo: consider making this a check for generic matrices, and impliment this test at every level of the code
 		"""
 		degree_max = self.date_span_limit/3.
 		lat1,lon1 = zip(*self.df_transition['start bin'].values)
@@ -244,6 +246,7 @@ class argo_traj_data:
 	def add_noise(self,matrix,noise=0.05):
 		"""
 		Adds guassian noise to the transition matrix
+		The appropriate level of noise has not been worked out and is kind of ad hock
 		"""
 		print 'adding matrix noise'
 		east_west,north_south = self.get_direction_matrix()
@@ -263,7 +266,7 @@ class argo_traj_data:
 		"""
 		deletes all w matrices in data directory
 		"""
-		for w in glob.glob(os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_*.npz'):
+		for w in glob.glob(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_*.npz'):
 			os.remove(w)
 
 	def load_w(self,number,dump=True):
@@ -272,7 +275,12 @@ class argo_traj_data:
 		"""
 		print 'in w matrix, current number is ',number
 		try:
-			self.w = load_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
+			self.w = load_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
+			assert self.transition_matrix.shape==self.w.shape
+ 			assert ~np.isnan(self.w).any()
+			assert (np.array(self.w)<=1).all()
+			assert (np.array(self.w)>=0).all()
+			assert (self.w.todense().sum(axis=0)-1<0.01).all()
 			print 'w matrix successfully loaded'
 		except IOError:
 			print 'w matrix could not be loaded and will be recompiled'
@@ -281,7 +289,14 @@ class argo_traj_data:
 			else:
 				self.load_w(number-1,dump=True)		# recursion to get to the first saved transition matrix 
 				self.w = self.w.dot(self.transition_matrix)		# advance the transition matrix once
-			 	# self.w = self.rescale_matrix(self.w)
+			assert self.transition_matrix.shape==self.w.shape
+ 			assert ~np.isnan(self.w).any()
+			assert (np.array(self.w)<=1).all()
+			assert (np.array(self.w)>=0).all()
+			assert (self.w.todense().sum(axis=0)-1<0.01).all()
 			if dump:
-				save_sparse_csr(os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
-				# self.diagnose_matrix(self.w,os.path.dirname(os.path.realpath(__file__))+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.png')
+				save_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
+
+for degree in [2,3,4]:
+	for time in np.arange(20,300,20):
+		traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)

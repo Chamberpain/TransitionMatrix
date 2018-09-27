@@ -262,8 +262,6 @@ class argo_traj_data(argo_traj_data):
     def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
         vmax = 0.4
         transition_matrix_plot = matrix_a-matrix_b
-        # transition_matrix_plot[transition_matrix_plot>0.25]=0.25
-        # transition_matrix_plot[transition_matrix_plot<-0.25]=-0.25
         k = np.diagonal(transition_matrix_plot.todense())
 
         transition_plot = self.transition_vector_to_plottable(k)
