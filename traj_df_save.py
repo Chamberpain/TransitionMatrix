@@ -8,6 +8,8 @@ import numpy as np
 import oceans
 
 """file to create pandas dataframe from trajectory data"""
+max_speed = 5
+percent_reject = 0.05
 
 f = open('traj_df_changelog.txt','w') #this is to keep a record of the floats that have been rejected
 degree_dist = 111.7	#The km distance of one degree
@@ -48,21 +50,9 @@ def frame_return(file_name):
 		df_holder.loc[df_holder['Lon Diff']>180,'Lon Diff']=df_holder[df_holder['Lon Diff']>180]['Lon Diff']-360
 	df_holder['Lon Speed']= np.cos(np.deg2rad(df_holder.Lat))*df_holder['Lon Diff']/df_holder['hour_diff']*degree_dist
 	df_holder['Speed'] = np.sqrt(df_holder['Lat Speed']**2 + df_holder['Lon Speed']**2)
-	if (df_holder.Speed>6).any():
-		print df_holder
-		print 'Min time diff in days is ',df_holder.Date.diff().dt.days.min()
-		print 'Min time diff in seconds is ',df_holder.Date.diff().dt.seconds.min()
-		print 'Min time diff in hours is ',(df_holder.Date.diff().dt.seconds/3600.).min()
-		print 'Max lon diff is ',df_holder['Lon Diff'].max()		
-		print 'Max lat diff is ',df_holder.Lat.diff().abs().max()
-		print 'Max lat speed is ',df_holder['Lat Speed'].abs().max()
-		print 'Max lon speed is ',df_holder['Lon Speed'].abs().max()
-		print 'Max speed is ',df_holder['Speed'].abs().max()
-		print 'I am returning the empty set'
-		f.write(str(cruise)+' is rejected because the calculated speed is outside the 10 km/hour tolerance \n')
-		return pd.DataFrame()
-	else:
-		return df_holder
+	if (df_holder.Speed>max_speed).any():
+		f.write(str(cruise)+' is rejected because the calculated speed is outside the '+str(max_speed)+' km/hour tolerance \n')
+	return df_holder
 
 data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/Traj/mat/'
 frames = []
@@ -83,15 +73,6 @@ df = pd.concat(frames)
 df.loc[df['position type'].isin(['GPS     ','IRIDIUM ']),'position type'] = 'GPS'
 df.loc[df['position type'].isin(['ARGOS   ']),'position type'] = 'ARGOS'
 df['Lon'] = oceans.wrap_lon180(df.Lon) 
-############## Tests ################
-# assert df.pres.min()>800
-# assert df.pres.max()<1200
-
-assert (df.dropna(subset=['Speed']).Speed>=0).all()
-assert df.Lon.min() >= -180
-assert df.Lon.max() <= 180
-assert df.Lat.max() <= 90
-assert df.Lat.min() >=-90
 
 bins_lat = np.arange(-90,90.1,2).tolist()
 bins_lon = np.arange(-180,180.1,2).tolist()
@@ -99,7 +80,9 @@ df['bins_lat'] = pd.cut(df.Lat,bins = bins_lat,labels=bins_lat[:-1])
 df['bins_lon'] = pd.cut(df.Lon,bins = bins_lon,labels=bins_lon[:-1])
 
 
-reject_list = []
+df['reject'] = False
+df.loc[df.Speed>5,'reject']=True # reject all floats with a speed above 6 km/hour
+
 for lat_bin in df.bins_lat.unique():
 	print 'we are on lat bin ',lat_bin
 	if (df.bins_lat==lat_bin).empty:
@@ -110,14 +93,71 @@ for lat_bin in df.bins_lat.unique():
 			continue
 		for cruise in df_token.Cruise.unique():
 
-			test_value = 100*df_token[df_token.Cruise!=cruise].Speed.var()+df_token[df_token.Cruise!=cruise].Speed.mean()
-			# print 'test value is ',test_value
-			# print 'max speed is ',df_token[df_token.Cruise==cruise].Speed.max()
-
+			test_value = 70*df_token[df_token.Cruise!=cruise].Speed.var()+df_token[df_token.Cruise!=cruise].Speed.mean()
+			
 			if (df_token[df_token.Cruise==cruise].Speed.dropna()>test_value).any():
 				f.write(str(cruise)+' is rejected because the maximum calculated speed is '+str(df_token[df_token.Cruise==cruise].Speed.dropna().max())+' which is outside the '+str(test_value)+' km/hour tolerance for the grid box \n')
-				reject_list.append(cruise)
-df = df[~df.Cruise.isin(reject_list)]
+				df.loc[(df.Cruise==cruise)&(df.Speed>test_value),'reject']=True
+
+df_rejected = df[df.Cruise.isin(df[df.reject==True].Cruise.unique())]
+df = df[~df.Cruise.isin(df[df.reject==True].Cruise.unique())]
+
+############ Show rejected statistics ###########
+percentage_df = (df_rejected[df_rejected.reject==True].groupby('Cruise').count()/df_rejected.groupby('Cruise').count())['pres'] # calculate the percentage of bad locations for each displacement
+for item in percentage_df.iteritems():
+	cruise,percentage = item
+	df_rejected.loc[df_rejected.Cruise==cruise,'percentage'] = percentage
+fig, ax = plt.subplots()
+df_rejected.Speed.hist(ax=ax, bins=100, bottom=0.1)
+df_rejected[df_rejected.percentage<percent_rejected].Speed.hist(ax=ax, color='r', bins=100, bottom=0.1,alpha=.5)
+ax.set_yscale('log')
+ax.set_xscale('log')
+plt.xlabel('km/hr')
+plt.ylabel('number of displacements')
+plt.title('Histogram of rejected velocities')
+
+fig1, ax1 = plt.subplots()
+argos_number = df_rejected.drop_duplicates(subset=['Cruise']).groupby('position type').count()['Cruise']['ARGOS']
+iridium_number = df_rejected.drop_duplicates(subset=['Cruise']).groupby('position type').count()['Cruise']['GPS']
+argos_number_low = df_rejected[df_rejected.percentage<percent_rejected].drop_duplicates(subset=['Cruise']).groupby('position type').count()['Cruise']['ARGOS']
+iridium_number_low = df_rejected[df_rejected.percentage<percent_rejected].drop_duplicates(subset=['Cruise']).groupby('position type').count()['Cruise']['GPS']
+
+ind = (1,2)
+ax1.bar(ind,(argos_number,iridium_number))
+ax1.bar(ind,(argos_number_low,iridium_number_low),color='r',alpha=.5)
+ax1.set_ylabel('Number')
+ax1.set_title('Number of rejected floats by positioning type')
+ax1.set_xticks(ind)
+ax1.set_xticklabels(('ARGOS', 'GPS'))
+
+fig2, ax2 = plt.subplots()
+df_rejected.drop_duplicates(subset=['Cruise']).percentage.hist(bins=50,label='All floats')
+df_rejected[df_rejected.percentage<percent_rejected].drop_duplicates(subset=['Cruise']).percentage.hist(bins=5,color='r',alpha=0.5,label='5% Rejected')
+plt.xlabel('Percentage of bad displacements')
+plt.ylabel('Number of floats')
+plt.title('Histogram of percentage of bad dispacements by float')
+
+plt.show()
+
+if (df_token[df_token.Cruise==cruise].Speed.dropna()>test_value).any():
+	f.write(str(cruise)+' is rejected because the maximum calculated speed is '+str(df_token[df_token.Cruise==cruise].Speed.dropna().max())+' which is outside the '+str(test_value)+' km/hour tolerance for the grid box \n')
+
+
+df = pd.concat([df_rejected[(df_rejected.percentage<percent_rejected)&(df_rejected.reject==False)],df]) #We allow some redemption if less than 5% of displacements are messed up
+############## Tests ################
+# assert df.pres.min()>800
+# assert df.pres.max()<1200
+
+assert (df.dropna(subset=['Speed']).Speed>=0).all()
+assert (df.dropna(subset=['Speed'])['Lon Speed']<(max_speed-0.2)).all()
+assert (df.dropna(subset=['Speed'])['Lat Speed']<(max_speed-0.2)).all()
+assert df.Lon.min() >= -180
+assert df.Lon.max() <= 180
+assert df.Lat.max() <= 90
+assert df.Lat.min() >=-90
+assert (df.dropna(subset=['hour_diff'])['hour_diff']>0).all()
+
+
 ############# Save ###############
 f.close()
 df.to_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_traj.pickle')
