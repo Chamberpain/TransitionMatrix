@@ -1,9 +1,12 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
-from transition_matrix_compute import argo_traj_data
+from transition_matrix_compute import argo_traj_data,load_sparse_csr
 import numpy as np
 from scipy.interpolate import griddata
 import pandas as pd
+import pyproj
+from matplotlib.patches import Polygon
+from itertools import groupby  
 
 """compiles and compares transition matrix from trajectory data. """
 class Basemap(Basemap):
@@ -138,7 +141,7 @@ class argo_traj_data(argo_traj_data):
 
     def transition_matrix_plot(self,filename,load_number_matrix=True):
         if load_number_matrix:
-            self.number_matrix = load_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
+            self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
         plt.figure(figsize=(10,10))
         k = np.diagonal(self.transition_matrix.todense())
         transition_plot = self.transition_vector_to_plottable(k)
@@ -150,10 +153,9 @@ class argo_traj_data(argo_traj_data):
         m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=1) # this is a plot for the tendancy of the residence time at a grid cell
         plt.colorbar(label='% particles dispersed')
         plt.title('1 - diagonal of transition matrix',size=30)
-        plt.savefig('./transition_plots/'+filename+'_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        plt.show()
+        plt.savefig(self.base_file+'transition_plots/'+filename+'_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         plt.close()
-        self.diagnose_matrix(self.transition_matrix,'./transition_plots/'+filename+'_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        self.diagnose_matrix(self.transition_matrix,self.base_file+'/transition_plots/'+filename+'_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
     def california_plot_for_lynne(self):
         locs = pd.read_excel('../california_current_float_projection/ca_current_test_locations_2018-05-14.xlsx')
@@ -207,24 +209,34 @@ class argo_traj_data(argo_traj_data):
         return plottable        
 
     def argo_dense_plot(self):
-        ZZ = self.df_to_plottable(self.df)
+        ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
+        series = self.df.groupby('bin_index').count()['Cruise']
+        for item in series.iteritems():
+            tup,n = item
+            ii_index = self.bins_lon.index(tup[1])
+            qq_index = self.bins_lat.index(tup[0])
+            ZZ[qq_index,ii_index] = n           
         plt.figure(figsize=(10,10))
         m = Basemap(projection='cyl',fix_aspect=False)
         # m.fillcontinents(color='coral',lake_color='aqua')
         m.drawcoastlines()
         XX,YY = m(self.X,self.Y)
         ZZ = np.ma.masked_equal(ZZ,0)
-        m.pcolormesh(XX,YY,ZZ,vmin=0,vmax=4000,cmap=plt.cm.magma)
+        m.pcolormesh(XX,YY,ZZ,vmin=0,cmap=plt.cm.magma)
         plt.title('Profile Density',size=30)
         plt.colorbar(label='Number of float profiles')
+        print 'I am saving argo dense figure'
+        plt.savefig(self.base_file+'argo_dense_data/number_matrix_degree_bins_'+str(self.degree_bins)+'.png')
+        plt.close()
 
     def dep_number_plot(self):
-        frames = []
-        k = len(self.df.Cruise.unique())
-        for n,cruise in enumerate(self.df.Cruise.unique()):
-            print k-n, 'cruises remaining'
-            frames.append(self.df[self.df.Cruise==cruise].head(1))
-        ZZ = self.df_to_plottable(pd.concat(frames))
+        ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
+        series = self.df.drop_duplicates(subset=['Cruise'],keep='first').groupby('bin_index').count()['Cruise']
+        for item in series.iteritems():
+            tup,n = item
+            ii_index = self.bins_lon.index(tup[1])
+            qq_index = self.bins_lat.index(tup[0])
+            ZZ[qq_index,ii_index] = n  
         plt.figure(figsize=(10,10))
         m = Basemap(projection='cyl',fix_aspect=False)
         # m.fillcontinents(color='coral',lake_color='aqua')
@@ -234,11 +246,23 @@ class argo_traj_data(argo_traj_data):
         m.pcolormesh(XX,YY,ZZ,vmin=0,vmax=30,cmap=plt.cm.magma)
         plt.title('Deployment Density',size=30)
         plt.colorbar(label='Number of floats deployed')
+        plt.savefig(self.base_file+'deployment_number_data/number_matrix_degree_bins_'+str(self.degree_bins)+'.png')
+        plt.close()
+
+        plt.figure(figsize=(10,10))
+        m = Basemap(projection='cyl',fix_aspect=False)
+        # m.fillcontinents(color='coral',lake_color='aqua')
+        m.drawcoastlines()
+        series = self.df.drop_duplicates(subset=['Cruise'],keep='first')
+        m.scatter(series.Lon.values,series.Lat.values,s=0.2)
+        plt.title('Deployment Locations',size=30)
+        plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
+        plt.close()
 
 
     def trans_number_matrix_plot(self): 
         try:
-            self.number_matrix = load_sparse_csr('./number_matrix_data/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the number matrix could not be loaded'
             self.recompile_transition_matrix(dump=True)
@@ -254,9 +278,17 @@ class argo_traj_data(argo_traj_data):
         m.pcolormesh(XX,YY,number_matrix_plot,vmin=0,vmax=80,cmap=plt.cm.magma)
         plt.title('Transition Density',size=30)
         plt.colorbar(label='Number of float transitions')
-        plt.savefig('./number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        plt.savefig(self.base_file+'/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         plt.close()
 
+        plt.figure(figsize=(10,10))
+        m = Basemap(projection='cyl',fix_aspect=False)
+        # m.fillcontinents(color='coral',lake_color='aqua')
+        m.drawcoastlines()
+        m.scatter(self.df.Lon.values,self.df.Lat.values,s=0.2)
+        plt.title('Float Profiles',size=30)
+        plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
+        plt.close()
 
 
     def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
@@ -780,4 +812,13 @@ class argo_traj_data(argo_traj_data):
             
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
-traj_class = argo_traj_data()
+for degree in [2,3,4]:
+    for time in np.arange(20,300,20):
+        print 'plotting for degree ',degree,' and time ',time
+        traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
+        traj_class.trans_number_matrix_plot()
+        traj_class.transition_matrix_plot(filename='base_transition_matrix')
+        if time == 20:
+            traj_class.argo_dense_plot()
+            traj_class.dep_number_plot()
+
