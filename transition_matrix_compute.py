@@ -25,7 +25,6 @@ def load_sparse_csr(filename):
                       shape=loader['shape']).T #this transpose is very important because otherwise these transition matrices load wrong and send flow the wrong way.
 
 __file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
-bad_cruise_list = ['1900857','1900978','1901149','1901552','3900743','3901062','4901246','5903883','6900938','6901004']
 
 class argo_traj_data:
 	def __init__(self,degree_bins=1,date_span_limit=60):
@@ -40,28 +39,26 @@ class argo_traj_data:
 			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 		self.df = pd.read_pickle(self.base_file+'all_argo_traj.pickle').sort_values(by=['Cruise','Date'])
-		self.df = self.df[~self.df.Cruise.isin(bad_cruise_list)]
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
-		self.df = self.df.reset_index(drop=True)
 		self.df['bin_index'] = zip(self.df['bins_lat'].values,self.df['bins_lon'].values)
+		self.df = self.df.reset_index(drop=True)
 
 		#implement tests of the dataset so that all values are within the known domain
 		assert self.df.Lon.min() >= -180
 		assert self.df.Lon.max() <= 180
 		assert self.df.Lat.max() <= 90
 		assert self.df.Lat.min() >=-90
-
+		print 'Displacement dataframe passed necessary tests'
 		try:
 			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
-			assert (self.df_transition['date span']>=0).all() #require time to go in the right direction
-
 		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
 		self.end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
 		self.df_transition = self.df_transition.dropna(subset=[self.end_bin_string])
 		self.identify_problems_df_transition()
+		print 'Transition dataframe passed all necessary tests'
 		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
 			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
@@ -71,6 +68,7 @@ class argo_traj_data:
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
+		print 'Transition matrix passed all necessary tests. Initial load complete'
 
 	def recompile_transition_df(self,dump=True):
 		"""
@@ -92,41 +90,35 @@ class argo_traj_data:
 			print 'start bin list is ',len(start_bin_list),' long'
 			mask = self.df.Cruise==cruise  		#pick out the cruise data from the df
 			df_holder = self.df[mask]
+			time_lag = 60
+			time_bins = np.arange(-0.001,(df_holder.Date.max()-df_holder.Date.min()).days,time_lag).tolist()
+			df_holder['Time From Deployment'] = [(dummy-df_holder.Date.min()).days + (dummy-df_holder.Date.min()).seconds/float(3600*24) for dummy in df_holder.Date]
+			assert (df_holder['Time From Deployment'].diff().tail(len(df_holder)-1)>0).all() # test that these are all positive and non zero
+
 			max_date = df_holder.Date.max()
-			df_holder['diff']= (df_holder.bins_lat.diff().apply(lambda x: 1 if abs(x) else 0)+df_holder.bins_lon.diff().apply(lambda x: 1 if abs(x) else 0)).cumsum()
-			position_type = df_holder['position type'].values[0]
-			group_library = df_holder.groupby('diff').groups
-			diff_group = np.sort(df_holder.groupby('diff').groups.keys()).tolist()
-			diff_group.pop() #this is the last grid box the float moved into and we can assume it died
-			for g in diff_group:
-				df_token = df_holder[df_holder.index.isin(group_library[g])]
-				start_date = df_token.Date.min()
-				cruise_list.append(cruise)
-				start_date_list.append(start_date)
-				start_bin_list.append(df_token.bin_index.values[0])
-				position_type_list.append(position_type)
+			df_holder['time_bins'] = pd.cut(df_holder['Time From Deployment'],bins = time_bins,labels=time_bins[:-1])
+			for row in df_holder.dropna(subset=['time_bins']).drop_duplicates(subset=['time_bins'],keep='first').iterrows():
+				dummy, row = row
+				cruise_list.append(row['Cruise'])
+				start_date_list.append(row['Date'])
+				start_bin_list.append(row['bin_index'])
+				position_type_list.append(row['position type'])
 				location_tuple = []
 				for time_addition in [datetime.timedelta(days=x) for x in time_delta_list]:
-					final_date = start_date+time_addition
+					final_date = row['Date']+time_addition
 					if final_date>max_date:
 						location_tuple.append(np.nan)
 					else:
-						location_tuple.append(df_holder[df_holder.Date==find_nearest(df_holder.Date,final_date)].bin_index.values[0]) # find the nearest date and record the bin index
+						final_dataframe_date = find_nearest(df_holder.Date,final_date)
+						if abs((final_dataframe_date-final_date).days)>30:
+							location_tuple.append(np.nan)
+						else:
+							location_tuple.append(df_holder[df_holder.Date==final_dataframe_date].bin_index.values[0]) # find the nearest date and record the bin index
 				final_bin_list.append(tuple(location_tuple))
-				
-				try:
-					advance = df_holder[df_holder.index==(df_token.tail(1).index.values[0]+1)]
-					date_span_list.append((advance.Date.min()-df_token.Date.min()).days)
-					end_bin_list.append(advance['bin_index'].values[0])
-				except IndexError:
-					date_span_list.append(np.nan)
-					end_bin_list.append(np.nan)
-				if any(len(lst) != len(position_type_list) for lst in [start_date_list, start_bin_list, end_bin_list, date_span_list, final_bin_list]):
+				if any(len(lst) != len(position_type_list) for lst in [start_date_list, start_bin_list, final_bin_list]):
 					print 'position list length ,',len(position_type_list)
 					print 'start date list ',len(start_date_list)
 					print 'start bin list ',len(start_bin_list)
-					print 'end bin list ',len(end_bin_list)
-					print 'date span list ',len(final_bin_list)
 					raise
 		df_dict = {}
 		df_dict['Cruise']=cruise_list
@@ -136,8 +128,7 @@ class argo_traj_data:
 		for time_delta,bin_list in zip(time_delta_list,zip(*final_bin_list)):
 			bins_string = 'end bin '+str(time_delta)+' day'
 			df_dict[bins_string]=bin_list
-		df_dict['end bin'] = end_bin_list
-		df_dict['date span'] = date_span_list
+		df_dict['end bin'] = final_bin_list
 		self.df_transition = pd.DataFrame(df_dict)
 		if dump:
 			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
@@ -297,6 +288,6 @@ class argo_traj_data:
 			if dump:
 				save_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
 
-for degree in [2,3,4]:
-	for time in np.arange(20,300,20):
-		traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
+# for degree in [2,3,4]:
+# 	for time in np.arange(20,300,20):
+# 		traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
