@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from mpl_toolkits.basemap import shiftgrid
 import sys,os
 import glob
 import pickle
@@ -68,6 +67,8 @@ class argo_traj_data:
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
+		assert (np.abs(self.transition_matrix.sum(axis=0)-1)<10**-10).all()
+		assert (self.transition_matrix>0).data.all() 
 		print 'Transition matrix passed all necessary tests. Initial load complete'
 
 	def recompile_transition_df(self,dump=True):
@@ -133,7 +134,7 @@ class argo_traj_data:
 		if dump:
 			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
 
-	def identify_problems_df_transition(self,plot=False):
+	def identify_problems_df_transition(self,plot=True):
 		"""
 		Initiates tests to make sure the transition matrix has reasonable statistics
 
@@ -157,7 +158,8 @@ class argo_traj_data:
 				plt.plot(x,y)
 				plt.scatter(x,y)
 				plt.title('Max distance is '+str(df_holder1.distance_check.max()))
-				plt.show()
+				plt.savefig(self.base_file+'/diagnostic_bad_cruises/'+str(cruise)+'_'+str(self.degree_bins)+'_'+str(self.date_span_limit))
+				plt.close()
 		self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(cruise_list)]
 
 
@@ -166,7 +168,6 @@ class argo_traj_data:
 		Recompiles transition matrix from df_transition based on set timestep
 		"""
 		num_list = []
-		num_list_index = []
 		data_list = []
 		row_list = []
 		column_list = []
@@ -177,63 +178,69 @@ class argo_traj_data:
 			ii_index = self.total_list.index(list(ii))
 			frame = self.df_transition[self.df_transition['start bin']==ii]	# data from of floats that start in looped grid cell
 			frame_cut = frame[frame[self.end_bin_string]!=ii].dropna(subset=[self.end_bin_string]) #this is all floats that go out of the looped grid cell
-			num_list_index.append(ii_index) # we only need to save this once, because we are only concerned about the diagonal
-			num_list.append(len(frame_cut)) # this is where we save the data density of every cell
-			if not frame_cut.empty:
-				print 'the frame cut was not empty'
-				test_list = []
-				row_list.append(ii_index)	#compute the on diagonal elements
-				column_list.append(ii_index)	#compute the on diagonal elemnts
-				data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
-				data_list.append(data)
-				test_list.append(data)
-				print 'total number of row slots is ',len(frame_cut[self.end_bin_string].unique())
-				for qq in frame_cut[self.end_bin_string].unique():
-					qq_index = self.total_list.index(list(qq))
-					row_list.append(qq_index)
-					column_list.append(ii_index)
-					data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
-					data_list.append(data)
-					test_list.append(data)
-			else:
-				print 'the frame cut was empy, so I will calculate the scaled dispersion'
-				test_list = []
-				diagonal = 1
-				for qq in frame['end bin'].unique():
-					try:
-						qq_index = self.total_list.index(list(qq))
-					except ValueError:
-						print qq,' was not in the list'
-						continue
-					frame_holder = frame[frame['end bin']==qq]
-					percentage_of_floats = len(frame_holder)/float(len(frame))
-					frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
-					frame_holder[frame_holder['time step percent']>1]=1
-					off_diagonal = len(frame_holder)/float(len(frame))*frame_holder['time step percent'].mean()
-					diagonal -= off_diagonal
-					row_list.append(qq_index)
-					column_list.append(ii_index)
-					data_list.append(off_diagonal)
-					test_list.append(off_diagonal)
-					print off_diagonal
-				print diagonal
-				row_list.append(ii_index)
+			# if not frame_cut.empty:
+			# 	print 'the frame cut was not empty'
+			test_list = []	#this is to confirm that the columns sum to 1
+			row_list.append(ii_index)	#compute the on diagonal elements
+			column_list.append(ii_index)	#compute the on diagonal elemnts
+			data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
+			num_list.append(len(frame)) # this is where we save the data density of every cell
+			data_list.append(data)
+			test_list.append(data)
+			print 'total number of row slots is ',len(frame_cut[self.end_bin_string].unique())
+			for qq in frame_cut[self.end_bin_string].unique():
+				qq_index = self.total_list.index(list(qq))
+				row_list.append(qq_index)	#these will be the off diagonal elements
 				column_list.append(ii_index)
-				data_list.append(diagonal)
-				test_list.append(diagonal)
+				data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
+				data_list.append(data)
+				num_list.append(len(frame)) # this is where we save the data density of every cell
+				test_list.append(data)
+			# else:
+			# 	print 'the frame cut was empty, so I will calculate the scaled dispersion'
+			# 	test_list = []
+			# 	diagonal = 1
+			# 	for qq in frame['end bin'].unique():
+			# 		try:
+			# 			qq_index = self.total_list.index(list(qq))
+			# 		except ValueError:
+			# 			print qq,' was not in the list'
+			# 			continue
+			# 		frame_holder = frame[frame['end bin']==qq]
+			# 		percentage_of_floats = len(frame_holder)/float(len(frame))
+			# 		frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
+			# 		frame_holder[frame_holder['time step percent']>1]=1
+			# 		off_diagonal = len(frame_holder)/float(len(frame))*frame_holder['time step percent'].mean()
+			# 		diagonal -= off_diagonal
+			# 		row_list.append(qq_index)
+			# 		column_list.append(ii_index)
+			# 		data_list.append(off_diagonal)
+			# 		test_list.append(off_diagonal)
+			# 		print off_diagonal
+			# 	print diagonal
+			# 	row_list.append(ii_index)
+			# 	column_list.append(ii_index)
+			# 	data_list.append(diagonal)
+			# 	test_list.append(diagonal)
 			assert abs(sum(test_list)-1)<0.01	#ensure that all columns scale to 1
 			assert ~np.isnan(data_list).any()
 			assert (np.array(data_list)<=1).all()
 			assert (np.array(data_list)>=0).all()
-		
+		print len(num_list)
+		print len(row_list)
+		print len(column_list)
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		# self.transition_matrix = self.add_noise(self.transition_matrix)
-		self.number_matrix = scipy.sparse.csc_matrix((num_list,(num_list_index,num_list_index)),shape=(len(self.total_list),len(self.total_list)))
+		sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
+		self.number_matrix = scipy.sparse.csc_matrix((num_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
+		self.standard_error = np.sqrt(self.transition_matrix*(sparse_ones-self.transition_matrix)/self.number_matrix)
+		self.standard_error = scipy.sparse.csc_matrix(self.standard_error)
 		if dump:
 			assert (np.abs(self.transition_matrix.todense().sum(axis=0)-1)<0.01).all() #this is in the dump subroutine for the case that it is recompiled for the data withholding experiment.
 			save_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
 			save_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
-
+			save_sparse_csr(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.standard_error)
+ 
 	def add_noise(self,matrix,noise=0.05):
 		"""
 		Adds guassian noise to the transition matrix
@@ -287,7 +294,3 @@ class argo_traj_data:
 			assert (self.w.todense().sum(axis=0)-1<0.01).all()
 			if dump:
 				save_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
-
-# for degree in [2,3,4]:
-# 	for time in np.arange(20,300,20):
-# 		traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)

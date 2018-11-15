@@ -1,13 +1,13 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
-from transition_matrix_compute import argo_traj_data,load_sparse_csr
+from transition_matrix_compute import argo_traj_data,load_sparse_csr,save_sparse_csr
 import numpy as np
 from scipy.interpolate import griddata
 import pandas as pd
 import pyproj
 from matplotlib.patches import Polygon
 from itertools import groupby  
-
+import scipy
 """compiles and compares transition matrix from trajectory data. """
 class Basemap(Basemap):
     def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
@@ -259,10 +259,10 @@ class argo_traj_data(argo_traj_data):
         plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
         plt.close()
 
-
     def trans_number_matrix_plot(self): 
         try:
             self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            self.standard_error = load_sparse_csr(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the number matrix could not be loaded'
             self.recompile_transition_matrix(dump=True)
@@ -275,11 +275,27 @@ class argo_traj_data(argo_traj_data):
         XX,YY = m(self.X,self.Y)
         # number_matrix_plot[number_matrix_plot>1000]=1000
         number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)
-        m.pcolormesh(XX,YY,number_matrix_plot,vmin=0,vmax=80,cmap=plt.cm.magma)
+        m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
         plt.title('Transition Density',size=30)
         plt.colorbar(label='Number of float transitions')
         plt.savefig(self.base_file+'/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         plt.close()
+
+        k = np.diagonal(self.standard_error.todense())
+        standard_error_plot = self.transition_vector_to_plottable(k)
+        plt.figure(figsize=(10,10))
+        m = Basemap(projection='cyl',fix_aspect=False)
+        # m.fillcontinents(color='coral',lake_color='aqua')
+        m.drawcoastlines()
+        XX,YY = m(self.X,self.Y)
+        # number_matrix_plot[number_matrix_plot>1000]=1000
+        standard_error_plot = np.ma.masked_equal(standard_error_plot,0)
+        m.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
+        plt.title('Standard Error',size=30)
+        plt.colorbar(label='Standard Error')
+        plt.savefig(self.base_file+'/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        plt.close()
+
 
         plt.figure(figsize=(10,10))
         m = Basemap(projection='cyl',fix_aspect=False)
@@ -287,7 +303,7 @@ class argo_traj_data(argo_traj_data):
         m.drawcoastlines()
         m.scatter(self.df.Lon.values,self.df.Lat.values,s=0.2)
         plt.title('Float Profiles',size=30)
-        plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
+        plt.savefig(self.base_file+'deployment_number_data/profile_locations.png')
         plt.close()
 
 
@@ -431,31 +447,44 @@ class argo_traj_data(argo_traj_data):
         This creates a matrix that shows the number of grid cells north and south, east and west.
         """
         lat_list, lon_list = zip(*self.total_list)
-        lon_max = 180/self.degree_bins
-        east_west = []
-        north_south = []
-        k = len(self.total_list)
-        for n,item in enumerate(self.total_list):
-            print 'made it through ',n,' there are ',(k-n),' remaining'
-            lat,lon = item
-            e_w = (np.array(lon_list)-lon)/self.degree_bins
-            e_w[e_w>lon_max]=e_w[e_w>lon_max]-2*lon_max
-            e_w[e_w<-lon_max]=e_w[e_w<-lon_max]+2*lon_max
-            east_west.append(e_w)
-            north_south.append((np.array(lat_list)-lat)/self.degree_bins)
+        pos_max = 180/self.degree_bins #this is the maximum number of bins possible
+        output_list = []
+        for position_list in [lat_list,lon_list]:
+            token_array = np.zeros([len(position_list),len(position_list)])
+            for token in np.unique(position_list):
+                print token
+                index_list = np.where(np.array(position_list)==token)[0]
 
-        east_west = np.array(east_west).T  #this is because np.array makes lists of lists go the wrong way
-        north_south = np.array(north_south).T
-        return (east_west,north_south)
+                token_list = (np.array(position_list)-token)/self.degree_bins #the relative number of degree bins
+                token_list[token_list>pos_max]=token_list[token_list>pos_max]-2*pos_max #the equivalent of saying -360 degrees
+                token_list[token_list<-pos_max]=token_list[token_list<-pos_max]+2*pos_max #the equivalent of saying +360 degrees
+
+                token_array[:,index_list]=np.array([token_list.tolist(),]*len(index_list)).transpose() 
+            output_list.append(token_array)
+        north_south,east_west = output_list
+        self.east_west = east_west
+        self.north_south = north_south  #this is because np.array makes lists of lists go the wrong way
+        assert (self.east_west<=180/self.degree_bins).all()
+        assert (self.east_west>=-180/self.degree_bins).all()
+        assert (self.north_south>=-180/self.degree_bins).all()
+        assert (self.north_south<=180/self.degree_bins).all()
 
     def quiver_plot(self,matrix):
         """
         This plots the mean transition quiver as well as the variance ellipses
         """
-        east_west,north_south = self.get_direction_matrix()
+# todo: need to check this over. I think there might be a bug.
         trans_mat = matrix.todense()
-        east_west = np.multiply(trans_mat,east_west)
-        north_south = np.multiply(trans_mat,north_south)
+        east_west = np.multiply(trans_mat,self.east_west)
+        north_south = np.multiply(trans_mat,self.north_south)
+        ew_test = scipy.sparse.csc_matrix(east_west)
+        ns_test = scipy.sparse.csc_matrix(north_south)
+        ew_test.data = ew_test.data**2
+        ns_test.data = ns_test.data**2
+        test = ew_test + ns_test
+        test = np.sqrt(test)
+        east_west[test.todense()>8]=0
+        north_south[test.todense()>8]=0
         m = Basemap(projection='cyl',fix_aspect=False)
         m.fillcontinents(color='coral',lake_color='aqua')
 
@@ -812,13 +841,17 @@ class argo_traj_data(argo_traj_data):
             
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
-for degree in [2,3,4]:
+for degree in [1,2,3,4]:
     for time in np.arange(20,300,20):
         print 'plotting for degree ',degree,' and time ',time
         traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
+        traj_class.get_direction_matrix()
         traj_class.trans_number_matrix_plot()
         traj_class.transition_matrix_plot(filename='base_transition_matrix')
+        plt.figure(figsize=(10,10))
+        traj_class.quiver_plot(traj_class.transition_matrix)
+        plt.savefig(traj_class.base_file+'/transition_plots/quiver_diagnose_degree_bins_'+str(degree)+'_time_step_'+str(time)+'.png')
+        plt.close()
         if time == 20:
             traj_class.argo_dense_plot()
             traj_class.dep_number_plot()
-
