@@ -91,9 +91,10 @@ class argo_traj_data:
 			print 'start bin list is ',len(start_bin_list),' long'
 			mask = self.df.Cruise==cruise  		#pick out the cruise data from the df
 			df_holder = self.df[mask]
-			time_lag = 60
+			time_lag = 30	#we assume a decorrelation timescale of 60 days
 			time_bins = np.arange(-0.001,(df_holder.Date.max()-df_holder.Date.min()).days,time_lag).tolist()
 			df_holder['Time From Deployment'] = [(dummy-df_holder.Date.min()).days + (dummy-df_holder.Date.min()).seconds/float(3600*24) for dummy in df_holder.Date]
+			#time from deployment is calculated like this to have the fractional day component
 			assert (df_holder['Time From Deployment'].diff().tail(len(df_holder)-1)>0).all() # test that these are all positive and non zero
 
 			max_date = df_holder.Date.max()
@@ -181,20 +182,22 @@ class argo_traj_data:
 			# if not frame_cut.empty:
 			# 	print 'the frame cut was not empty'
 			test_list = []	#this is to confirm that the columns sum to 1
+			num_test_list = []
 			row_list.append(ii_index)	#compute the on diagonal elements
 			column_list.append(ii_index)	#compute the on diagonal elemnts
 			data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
-			num_list.append(len(frame)) # this is where we save the data density of every cell
+			num_list.append(len(frame)-len(frame_cut)) # this is where we save the data density of every cell
+			num_test_list.append(len(frame)-len(frame_cut))
 			data_list.append(data)
 			test_list.append(data)
-			print 'total number of row slots is ',len(frame_cut[self.end_bin_string].unique())
 			for qq in frame_cut[self.end_bin_string].unique():
 				qq_index = self.total_list.index(list(qq))
 				row_list.append(qq_index)	#these will be the off diagonal elements
 				column_list.append(ii_index)
 				data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
 				data_list.append(data)
-				num_list.append(len(frame)) # this is where we save the data density of every cell
+				num_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq])) # this is where we save the data density of every cell
+				num_test_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq]))
 				test_list.append(data)
 			# else:
 			# 	print 'the frame cut was empty, so I will calculate the scaled dispersion'
@@ -226,9 +229,8 @@ class argo_traj_data:
 			assert ~np.isnan(data_list).any()
 			assert (np.array(data_list)<=1).all()
 			assert (np.array(data_list)>=0).all()
-		print len(num_list)
-		print len(row_list)
-		print len(column_list)
+			assert sum(num_test_list)==len(frame)
+		assert sum(num_list)==len(self.df_transition)
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		# self.transition_matrix = self.add_noise(self.transition_matrix)
 		sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
