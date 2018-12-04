@@ -1,35 +1,49 @@
-import numpy as np                                                                                                              
-from netCDF4 import Dataset                                                         
+import numpy as np
+from netCDF4 import Dataset
 import fnmatch
-import sys,os                                                                                                                   
+import sys,os
 import pickle
+import time
+import matplotlib.pyplot as plt
 
-############
-########## IF THIS IS EVER REDONE, INSTEAD OF SAVING ARRAYS, JUST SAVE THE CORRELATION VALUES RELATIVE TO THE STARTING LOCATION ###########
-############
+def find_nearest(items, pivot):
+	return min(items, key=lambda x: abs(x - pivot))
 
 
-
-nc_fid = Dataset('/data/soccom/CM2p6/ocean_scalar.static.nc')
-mask = nc_fid['ht'][:]<2000
-data_directory = '/data/soccom/CM2p6/ocean_minibling_surf_flux'
-pco2_list = []
-o2_list = []
-matches = []
-
-degree_cutoff = 8  #so that we dont calculate unphysical correlation scales
-lon_list = np.arange(-279.5,80.5,1)
-lat_list = np.arange(-80.5,89.5,1)
-def find_nearest(items, pivot):                                                                                                 
-	return min(items, key=lambda x: abs(x - pivot)) 
 try:
-	o2 = np.load('subsampled_o2')
-	pco2 = np.load('subsampled_pco2')
-
-
-
+	lat_list = np.load('lat_list.npy')
+	lon_list = np.load('lon_list.npy')
 
 except IOError:
+	nc_fid_token = Dataset('/data/SO12/CM2p6/ocean_scalar.static.nc')
+	depth = nc_fid_token.variables['ht'][:]
+	mask = nc_fid_token.variables['ht'][:]>500
+	lon_token = nc_fid_token.variables['xt_ocean'][:]
+	lat_token = nc_fid_token.variables['yt_ocean'][:]
+	X,Y = np.meshgrid(lon_token,lat_token)
+	lon_list = X[mask]
+	lat_list = Y[mask]
+	rounded_lat_list = np.arange(-81,89.6,0.5)
+	rounded_lon_list = np.arange(-279.5,80.1,0.5)
+	target_lat_list = [find_nearest(lat_token,x) for x in rounded_lat_list]
+	target_lon_list = [find_nearest(lon_token,x) for x in rounded_lon_list]
+	subsample_mask = np.isin(lon_list,target_lon_list)&np.isin(lat_list,target_lat_list)
+	lat_list = lat_list[subsample_mask]
+	lon_list = lon_list[subsample_mask]
+	lat_list = np.array([find_nearest(rounded_lat_list,x) for x in lat_list])
+	lon_list = np.array([find_nearest(rounded_lon_list,x) for x in lon_list])
+
+	data_directory = '/data/SO12/CM2p6/ocean_minibling_surf_flux'
+
+	degree_cutoff = 12  #so that we dont calculate unphysical correlation scales
+
+
+try:
+	o2 = np.load('subsampled_o2.npy')
+	pco2 = np.load('subsampled_pco2.npy')
+
+except IOError:
+	matches = []
 	for root, dirnames, filenames in os.walk(data_directory):
 		for filename in fnmatch.filter(filenames, '*.nc'):
 			matches.append(os.path.join(root, filename))	
@@ -38,65 +52,78 @@ except IOError:
 	for n, match in enumerate(matches):
 		print 'file is ',match,', there are ',len(matches[:])-n,'files left'
 		nc_fid = Dataset(match, 'r')
+		for k in range(nc_fid.variables['pco2'].shape[0]):
+			print 'day ',k
+			matrix_holder = nc_fid.variables['pco2'][k,:,:][mask]
+			pco2_list.append(matrix_holder[subsample_mask].data)
+			matrix_holder = nc_fid.variables['o2_saturation'][k,:,:][mask]
+			o2_list.append(matrix_holder.flatten()[subsample_mask].data)
+
+	o2 = np.vstack(o2_list)
+	np.save('subsampled_o2',o2)
+	pco2 = np.vstack(pco2_list)
+	np.save('subsampled_pco2',pco2)
 
 
-		lat_index_list = [nc_fid['yt_ocean'][:].tolist().index(find_nearest(nc_fid['yt_ocean'][:],x)) for x in lat_list]
-		lon_index_list = [nc_fid['xt_ocean'][:].tolist().index(find_nearest(nc_fid['xt_ocean'][:],x)) for x in lon_list]
-
-		#need to include logic to mask 2000 meters
-
-		holder_pco2 = nc_fid['pco2'][:].take(lon_index_list, axis=2, mode='clip').take(lat_index_list, axis=1, mode='clip')
-		print 'pco2 loaded'
-		# take is much faster than array slicing
-		pco2_list.append(holder_pco2)
-
-		holder_o2 = nc_fid['o2_saturation'][:].take(lon_index_list, axis=2, mode='clip').take(lat_index_list, axis=1, mode='clip')
-		print 'o2 loaded'
-		# take is much faster than array slicing
-		o2_list.append(holder_pco2)
-	o2 = np.ma.concatenate(o2_list)
-	pco2 = np.ma.concatenate(pco2_list)
-
-	o2.dump('subsampled_o2')
-	pco2.dump('subsampled_pco2')
-
-
-def correlation_calc(matrix_):
-	position_list = []
+def correlation_calc(matrix_,name_,plot=False):
 	array_list = []
-	for i,lat_l in enumerate(lat_list):
-		for k,lon_l in enumerate(lon_list):
-			print 'i is ',i,' k is ',k
-			if matrix_[:,i,k].mask.any():
-				print 'we found masked values in this array and are looping on'
-				continue	
-			base_list = matrix_[:,i,k]
-			base_pos = (lat_l,lon_l)
-			lat_difference_list = abs(lat_list - lat_l) 
-			lon_difference_list = abs(lon_list - lon_l) 
-			lon_difference_list[lon_difference_list>180] = abs(lon_difference_list[lon_difference_list>180]-360)
-			lon_mask = np.where((lon_difference_list<degree_cutoff)&(lon_difference_list>0))[0]
-			lat_mask = np.where((lat_difference_list<degree_cutoff)&(lat_difference_list>0))[0]
-			lon_holder = lon_list[lon_mask]
-			lat_holder = lat_list[lat_mask]
-			token_matrix_ = matrix_.take(lon_mask, axis=2, mode='clip').take(lat_mask, axis=1, mode='clip')
-			for q,lat_h in enumerate(lat_holder):
-				for p,lon_h in enumerate(lon_holder):
-						cor = np.corrcoef(base_list,token_matrix_[:,q,p])[0,1]
-						if np.isnan(cor):
-							print 'we found mask values in the correlation array and are looping on'
-							continue
-						array_list.append(cor)
-						position_list.append((base_pos,(lat_h,lon_h)))
-	return (array_list,position_list)
-pco2_array_list, pco2_position_list = correlation_calc(pco2)
-with open('pco2_array_list', 'wb') as fp:
-    pickle.dump(pco2_array_list, fp)
-with open('pco2_position_list', 'wb') as fp:
-    pickle.dump(pco2_position_list, fp)
+	len_= len(lat_list)
+	for n in range(len(lat_list)):
+		print 'I am ',float((n+1))/len_,' percent done'
 
-o2_array_list, o2_position_list = correlation_calc(o2)
-with open('o2_array_list', 'wb') as fp:
-    pickle.dump(o2_array_list, fp)
-with open('o2_position_list', 'wb') as fp:
-    pickle.dump(o2_position_list, fp)
+		start = time.time()
+		base_lat = lat_list[n]
+		base_lon = lon_list[n]
+		print 'lat is ',base_lat
+		print 'lon is ',base_lon
+		file_name_ = './'+name_+'/'+str(base_lat)+'_'+str(base_lon)+'.npy'
+
+		lat_index_list = np.arange(base_lat-12,base_lat+12.1,0.5)
+		assert len(lat_index_list)==49
+		lon_index_list = np.arange(base_lon-12,base_lon+12.1,0.5)
+		lon_index_list[lon_index_list<-279.5] = lon_index_list[lon_index_list<-279.5]+360 
+		lon_index_list[lon_index_list>80] = lon_index_list[lon_index_list>80]-360 
+		assert len(lon_index_list)==49
+
+		if (base_lat % 1 != 0 )|(base_lon %1 !=0): # only consider whole degree values
+			end = time.time()
+			print 'the position was not a whole degree, looping'
+			print 'subroutine took ',end-start
+			continue
+		try:
+			array = np.load(file_name_)
+		except IOError:
+			print 'the array was not found, we are recompiling'
+			base_timeseries = matrix_[:,n]
+			array = np.zeros([49,49])
+
+			for i,lon in enumerate(lon_index_list):
+				lon_mask = (lon_list==lon)
+				for j,lat in enumerate(lat_index_list):
+					lat_mask = (lat_list==lat)
+					mask = lat_mask&lon_mask
+					if ~mask.any():
+						continue
+					token_timeseries = matrix_[:,mask.tolist().index(True)]
+					cor = np.corrcoef(base_timeseries,token_timeseries)[0,1]
+					array[i,j]=cor	
+			np.save(file_name_,array)
+		array_list.append(array)
+		end = time.time()
+		print 'subroutine took ',end-start
+		if plot:
+			X,Y = np.meshgrid(lon_index_list,lat_index_list)
+			plt.pcolor(X,Y,np.ma.masked_equal(array.T,0),vmin=0,vmax=1)
+			# plt.yticks(lat_index_list)
+			# plt.xticks(lon_index_list)
+			plt.title('Correlation at '+str(base_lat)+' Lat, '+str(base_lon)+' Lon')
+			plt.colorbar()
+			plt.savefig(file_name_[:-4]+'.png')
+
+			plt.close()
+	return np.vstack(array_list)
+
+dummy_array_list= correlation_calc(pco2,'pco2',plot=True)
+np.save('pco2_corr',dummy_array)
+dummy_array= correlation_calc(o2,'o2',plot=True)
+np.save('o2_corr',dummy_array)
