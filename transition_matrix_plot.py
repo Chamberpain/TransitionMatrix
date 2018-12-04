@@ -1,12 +1,14 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
 from transition_matrix_compute import argo_traj_data,load_sparse_csr,save_sparse_csr
+from transition_matrix_compute import find_nearest
 import numpy as np
 from scipy.interpolate import griddata
 import pandas as pd
 import pyproj
 from matplotlib.patches import Polygon
-from itertools import groupby  
+from itertools import groupby
+import pickle
 import scipy
 """compiles and compares transition matrix from trajectory data. """
 class Basemap(Basemap):
@@ -296,7 +298,7 @@ class argo_traj_data(argo_traj_data):
         plt.savefig(self.base_file+'/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         plt.close()
 
-
+    def deployment_locations(self):
         plt.figure(figsize=(10,10))
         m = Basemap(projection='cyl',fix_aspect=False)
         # m.fillcontinents(color='coral',lake_color='aqua')
@@ -469,7 +471,7 @@ class argo_traj_data(argo_traj_data):
         assert (self.north_south>=-180/self.degree_bins).all()
         assert (self.north_south<=180/self.degree_bins).all()
 
-    def quiver_plot(self,matrix):
+    def quiver_plot(self,matrix,arrows=True,degree_sep=4,scale_factor=20):
         """
         This plots the mean transition quiver as well as the variance ellipses
         """
@@ -479,18 +481,18 @@ class argo_traj_data(argo_traj_data):
         north_south = np.multiply(trans_mat,self.north_south)
         ew_test = scipy.sparse.csc_matrix(east_west)
         ns_test = scipy.sparse.csc_matrix(north_south)
-        ew_test.data = ew_test.data**2
-        ns_test.data = ns_test.data**2
-        test = ew_test + ns_test
-        test = np.sqrt(test)
-        east_west[test.todense()>8]=0
-        north_south[test.todense()>8]=0
+        # ew_test.data = ew_test.data**2
+        # ns_test.data = ns_test.data**2
+        # test = ew_test + ns_test
+        # test = np.sqrt(test)
+        # east_west[test.todense()>8]=0
+        # north_south[test.todense()>8]=0
         m = Basemap(projection='cyl',fix_aspect=False)
         m.fillcontinents(color='coral',lake_color='aqua')
 
         m.drawcoastlines()
-        Y = np.arange(-68,66,4)
-        X = np.arange(-162,162,4)
+        Y = np.arange(-68,66,degree_sep)
+        X = np.arange(-162,162,degree_sep)
         XX,YY = np.meshgrid(X,Y)
         n_s = np.zeros(XX.shape)
         e_w = np.zeros(XX.shape)
@@ -521,21 +523,14 @@ class argo_traj_data(argo_traj_data):
                 print 'angle = ',angle
                 print 'axis1 = ',axis1
                 print 'axis2 = ',axis2
-                if axis1>0.5: 
-                    print 'Axis 1 is too big'
-                    continue
-                if axis2>0.1: 
-                    print 'Axis 2 is too big'
-                    continue
-
                 try:
-                    poly = m.ellipse(lon, lat, axis1*20,axis2*20, 80,phi=angle, facecolor='green', zorder=3,alpha=0.35)
+                    poly = m.ellipse(lon, lat, axis1*scale_factor,axis2*scale_factor, 80,phi=angle, facecolor='green', zorder=3,alpha=0.35)
                 except ValueError:
                     continue
         e_w = np.ma.array(e_w,mask=(e_w==0))
         n_s = np.ma.array(n_s,mask=(n_s==0))
-        m.quiver(XX,YY,e_w*5000,n_s*5000,scale=25)
-        plt.title('Variance Ellipses of Transition Matrix')
+        if arrows:
+            m.quiver(XX,YY,e_w*5000,n_s*5000,scale=25)
 
     def diagnose_matrix(self,matrix,filename):
         plt.figure(figsize=(10,10))
@@ -709,7 +704,7 @@ class argo_traj_data(argo_traj_data):
         plt.figure()
         if cost_plot:
             plt.subplot(2,1,1)
-        field_vector = self.cm2p6('mean_pco2.dat')
+        field_vector = self.cm2p6(self.base_file+'mean_pco2.dat')
         field_plot = abs(self.transition_vector_to_plottable(field_vector))
         m,x,y,desired_vector,target_vector =  self.get_optimal_float_locations(field_vector,desired_vector_in_plottable=(not cost_plot)) #if cost_plot, the vector will return desired vector in form for calculations
         XX,YY = m(self.X,self.Y)
@@ -741,7 +736,7 @@ class argo_traj_data(argo_traj_data):
         plt.figure()
         if line:
             plt.subplot(2,1,1)
-        field_vector = self.cm2p6('mean_o2.dat')
+        field_vector = self.cm2p6(self.base_file+'mean_o2.dat')
         field_vector[field_vector<floor]=floor
         field_plot = abs(self.transition_vector_to_plottable(field_vector))
         m,x,y,desired_vector =  self.get_optimal_float_locations(field_vector)
@@ -764,8 +759,8 @@ class argo_traj_data(argo_traj_data):
 
     def hybrid_var_plot(self):
         plt.figure()
-        field_vector_pco2 = self.cm2p6('mean_pco2.dat')
-        field_vector_o2 = self.cm2p6('mean_o2.dat')
+        field_vector_pco2 = self.cm2p6(self.base_file+'mean_pco2.dat')
+        field_vector_o2 = self.cm2p6(self.base_file+'mean_o2.dat')
         field_vector_pco2[field_vector_pco2>(10*field_vector_pco2.std()+field_vector_pco2.mean())]=0
         field_vector = field_vector_pco2/(2*field_vector_pco2.max())+field_vector_o2/(2*field_vector_o2.max())
         field_plot = abs(self.transition_vector_to_plottable(field_vector))
@@ -778,23 +773,23 @@ class argo_traj_data(argo_traj_data):
 
     def load_corr_matrix(self,variable):
         try:
-            self.cor_matrix = load_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz')
+            self.cor_matrix = load_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz')
         except IOError:
-            with open(variable+"_array_list", "rb") as fp:   
+            with open(self.base_file+variable+"_array_list", "rb") as fp:   
                 array_list = pickle.load(fp)
 
-            with open(variable+"_position_list", "rb") as fp:
+            with open(self.base_file+variable+"_position_list", "rb") as fp:
                 position_list = pickle.load(fp)
 
-            base_list,alt_list = zip(*position_list)
+            base_list,alt_list = zip(*position_list)    #the positions are saved as column, row pairs
             base_lat,base_lon = zip(*base_list)
             alt_lat,alt_lon = zip(*alt_list)
 
             base_lon = np.array(base_lon); alt_lon = np.array(alt_lon)
             base_lat = np.array(base_lat); alt_lat = np.array(alt_lat)
             array_list = np.array(array_list)
-            base_lon[base_lon<-180] = base_lon[base_lon<-180]+360
-            alt_lon[alt_lon<-180] = alt_lon[alt_lon<-180]+360
+            base_lon[base_lon<-180] = base_lon[base_lon<-180]+360   # put the data into -180 to 180 lon format
+            alt_lon[alt_lon<-180] = alt_lon[alt_lon<-180]+360   
 
             total_lat,total_lon = zip(*self.total_list)
             subsampled_bins_lon = [find_nearest(np.unique(base_lon), i) for i in np.unique(total_lon)]
@@ -840,18 +835,31 @@ class argo_traj_data(argo_traj_data):
                     data_list += value_temp
             
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
-            save_sparse_csr(variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
-for degree in [1,2,3,4]:
-    for time in np.arange(20,300,20):
-        print 'plotting for degree ',degree,' and time ',time
-        traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
-        traj_class.get_direction_matrix()
-        traj_class.trans_number_matrix_plot()
-        traj_class.transition_matrix_plot(filename='base_transition_matrix')
-        plt.figure(figsize=(10,10))
-        traj_class.quiver_plot(traj_class.transition_matrix)
-        plt.savefig(traj_class.base_file+'/transition_plots/quiver_diagnose_degree_bins_'+str(degree)+'_time_step_'+str(time)+'.png')
-        plt.close()
-        if time == 20:
-            traj_class.argo_dense_plot()
-            traj_class.dep_number_plot()
+            save_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
+for token in [(2,0.2),(4,1)]:
+    degree,scale = token
+    traj_class = argo_traj_data(degree_bins=degree)
+    traj_class.get_direction_matrix()
+    traj_class.load_corr_matrix('o2')
+    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
+    plt.title('O2 correlation ellipses')
+    plt.savefig(traj_class.base_file+'/transition_plots/o2_correlation_degree_bins_'+str(degree)+'.png')
+    plt.close()
+    traj_class.load_corr_matrix('pco2')
+    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
+    plt.title('pCO2 correlation ellipses')
+    plt.savefig(traj_class.base_file+'/transition_plots/pco2_correlation_degree_bins_'+str(degree)+'.png')
+    plt.close()
+    # for time in np.arange(20,260,40):
+    #     print 'plotting for degree ',degree,' and time ',time
+    #     traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
+    #     traj_class.get_direction_matrix()
+    #     traj_class.trans_number_matrix_plot()
+    #     traj_class.transition_matrix_plot(filename='base_transition_matrix')
+    #     plt.figure(figsize=(10,10))
+    #     traj_class.quiver_plot(traj_class.transition_matrix)
+    #     plt.savefig(traj_class.base_file+'/transition_plots/quiver_diagnose_degree_bins_'+str(degree)+'_time_step_'+str(time)+'.png')
+    #     plt.close()
+    #     if time == 20:
+    #         traj_class.argo_dense_plot()
+    #         traj_class.dep_number_plot()
