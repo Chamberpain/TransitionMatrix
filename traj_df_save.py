@@ -3,7 +3,7 @@ import fnmatch
 import datetime
 import scipy.io
 import pandas as pd
-import time
+import time # used for expressing how long each routine lasted.
 import numpy as np
 import oceans
 import matplotlib.pyplot as plt
@@ -34,10 +34,10 @@ def frame_return(file_name):
 	cruise = traj_dict['subwmo'][0]	#this is the WMO id number of the cruise
 	positioning_type = traj_dict['subtrans_sys'][0]	#this is the positioning type used for the cruise
 	assert ~all(v == len(lon_i) for v in [len(lon_i),len(lon_f),len(lat_i),len(lat_f),len(date_i),len(date_f),len(pres)])	# all lists have to be the same length
-	df_holder = pd.DataFrame({'position type':positioning_type,'Cruise':cruise,'lon_i':lon_i,'Lon':lon_f,'lat_i':lat_i,'Lat':lat_f,'date_i':date_i,'Date':date_f,'pres':pres})
+	df_holder = pd.DataFrame({'position type':positioning_type,'Cruise':cruise,'lon_i':lon_i,'Lon':lon_f,'lat_i':lat_i,'Lat':lat_f,'date_i':date_i,'Date':date_f,'pres':pres}) # create dataframe of all data
 
 	if df_holder.empty:
-		f.write(str(cruise)+' was empty \n')
+		f.write(str(cruise)+' was empty \n')	#write in the log that there were no data
 		return df_holder
 	df_holder['hour_diff'] = df_holder.Date.diff().dt.days*24+df_holder.Date.diff().dt.seconds/3600.
 	if (df_holder.hour_diff.tail(len(df_holder)-1)<0).any():
@@ -66,23 +66,25 @@ def frame_return(file_name):
 	assert (df_holder.dropna(subset=['hour_diff'])['hour_diff']>0).all()
 	return df_holder
 
-data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/Traj/mat/'
-frames = []
-matches = []
-float_type = ['Argo']
-for root, dirnames, filenames in os.walk(data_directory):
-	for filename in fnmatch.filter(filenames, '*.mat'):
-		matches.append(os.path.join(root, filename))
-for n, match in enumerate(matches):
-	print 'file is ',match,', there are ',len(matches[:])-n,'floats left'
-	t = time.time()
-	frames.append(frame_return(match))
-	print 'Building and merging datasets took ', time.time()-t
-df = pd.concat(frames)
-df.loc[df['position type'].isin(['GPS     ','IRIDIUM ']),'position type'] = 'GPS'
-df.loc[df['position type'].isin(['ARGOS   ']),'position type'] = 'ARGOS'
-df['Lon'] = oceans.wrap_lon180(df.Lon) 
-
+try:
+	pd.read_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_unprocessed_traj.pickle')
+except IOError:
+	data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/Traj/mat/'
+	frames = []
+	matches = []
+	for root, dirnames, filenames in os.walk(data_directory):
+		for filename in fnmatch.filter(filenames, '*.mat'):
+			matches.append(os.path.join(root, filename))
+	for n, match in enumerate(matches):
+		print 'file is ',match,', there are ',len(matches[:])-n,'floats left'
+		t = time.time()
+		frames.append(frame_return(match))
+		print 'Building and merging datasets took ', time.time()-t
+	df = pd.concat(frames)
+	df.loc[df['position type'].isin(['GPS     ','IRIDIUM ']),'position type'] = 'GPS'
+	df.loc[df['position type'].isin(['ARGOS   ']),'position type'] = 'ARGOS'
+	assert ((df['position type']=='GPS')|(df['position type']=='ARGOS')).all()
+	df.to_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_unprocessed_traj.pickle')
 
 dummy_lat = np.arange(-90,90.1,4).tolist()
 dummy_lon = np.arange(-180,180.1,4).tolist()
@@ -93,22 +95,22 @@ assert (~df['bins_lat'].isnull()).all()
 assert (~df['bins_lon'].isnull()).all()
 
 df['reject'] = False
-df.loc[df.Speed>5,'reject']=True # reject all floats with a speed above 6 km/hour
+df.loc[df.Speed>5,'reject']=True # reject all floats with a speed above 5 km/hour
 k  = len (df.bin_index.unique())
 for n,index_bin in enumerate(df.bin_index.unique()):
 	print 'we have ',k-n,' index bins remaining'
 	df_token = df[df.bin_index==index_bin]
 	for cruise in df_token.Cruise.unique():
 		test_value = 60*df_token[df_token.Cruise!=cruise].Speed.var()+df_token[df_token.Cruise!=cruise].Speed.mean()
+# this is to make some regionality to the rejection critera. 60 is chosen arbitrarily
 		if (df_token[df_token.Cruise==cruise].Speed.dropna()>test_value).any():
-			f.write(str(cruise)+' is rejected because the maximum calculated speed is '+str(df_token[df_token.Cruise==cruise].Speed.dropna().max())+' which is outside the '+str(test_value)+' km/hour tolerance for the grid box \n')
+			f.write(str(cruise)+' is rejected because the maximum calculated speed is '
+				+str(df_token[df_token.Cruise==cruise].Speed.dropna().max())+
+				' which is outside the '+str(test_value)+' km/hour tolerance for the grid box \n')
 			df.loc[(df.Cruise==cruise)&(df.Speed>test_value)&(df.bin_index==index_bin),'reject']=True
 
 df_rejected = df[df.Cruise.isin(df[df.reject==True].Cruise.unique())]
 df = df[~df.Cruise.isin(df[df.reject==True].Cruise.unique())]
-
-
-
 
 
 ############ Show rejected statistics and redeem some floats ###########
