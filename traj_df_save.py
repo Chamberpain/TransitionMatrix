@@ -88,6 +88,10 @@ except IOError:
 
 dummy_lat = np.arange(-90,90.1,4).tolist()
 dummy_lon = np.arange(-180,180.1,4).tolist()
+
+X,Y = np.meshgrid(dummy_lon,dummy_lat)
+speed_variance_matrix = np.zeros(X.shape)
+speed_mean_matrix = np.zeros(X.shape)
 df['bins_lat'] = pd.cut(df.Lat,bins = dummy_lat,labels=dummy_lat[:-1])
 df['bins_lon'] = pd.cut(df.Lon,bins = dummy_lon,labels=dummy_lon[:-1])
 df['bin_index'] = zip(df['bins_lat'].values,df['bins_lon'].values)
@@ -98,8 +102,15 @@ df['reject'] = False
 df.loc[df.Speed>5,'reject']=True # reject all floats with a speed above 5 km/hour
 k  = len (df.bin_index.unique())
 for n,index_bin in enumerate(df.bin_index.unique()):
+	lat,lon = index_bin
+	lat_index = dummy_lat.index(lat)
+	lon_index = dummy_lon.index(lon)
 	print 'we have ',k-n,' index bins remaining'
 	df_token = df[df.bin_index==index_bin]
+
+	speed_mean_matrix[lat_index,lon_index] = df_token.Speed.var()
+	speed_variance_matrix[lat_index,lon_index] = df_token.Speed.mean()
+
 	for cruise in df_token.Cruise.unique():
 		test_value = 60*df_token[df_token.Cruise!=cruise].Speed.var()+df_token[df_token.Cruise!=cruise].Speed.mean()
 # this is to make some regionality to the rejection critera. 60 is chosen arbitrarily
@@ -109,9 +120,29 @@ for n,index_bin in enumerate(df.bin_index.unique()):
 				' which is outside the '+str(test_value)+' km/hour tolerance for the grid box \n')
 			df.loc[(df.Cruise==cruise)&(df.Speed>test_value)&(df.bin_index==index_bin),'reject']=True
 
+
+plt.figure(figsize=(10,10))
+m = Basemap(projection='cyl',fix_aspect=False)
+# m.fillcontinents(color='coral',lake_color='aqua')
+m.drawcoastlines()
+XX,YY = m(X,Y)
+m.pcolor(X,Y,np.ma.masked_equal(speed_mean_matrix,0))
+plt.title('Raw Mean Speed')
+plt.colorbar(label='km/hr')
+
+
+plt.figure(figsize=(10,10))
+m = Basemap(projection='cyl',fix_aspect=False)
+# m.fillcontinents(color='coral',lake_color='aqua')
+m.drawcoastlines()
+XX,YY = m(X,Y)
+m.pcolor(X,Y,np.ma.masked_equal(speed_variance_matrix,0))
+plt.title('Raw Mean Variance')
+plt.colorbar(label='$km^2/hr^2$')
+
+
 df_rejected = df[df.Cruise.isin(df[df.reject==True].Cruise.unique())]
 df = df[~df.Cruise.isin(df[df.reject==True].Cruise.unique())]
-
 
 ############ Show rejected statistics and redeem some floats ###########
 percentage_df = (df_rejected[df_rejected.reject==True].groupby('Cruise').count()/df_rejected.groupby('Cruise').count())['pres'] # calculate the percentage of bad locations for each displacement
