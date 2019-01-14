@@ -91,7 +91,7 @@ class argo_traj_data:
 			print 'start bin list is ',len(start_bin_list),' long'
 			mask = self.df.Cruise==cruise  		#pick out the cruise data from the df
 			df_holder = self.df[mask]
-			time_lag = 30	#we assume a decorrelation timescale of 60 days
+			time_lag = 30	#we assume a decorrelation timescale of 30 days
 			time_bins = np.arange(-0.001,(df_holder.Date.max()-df_holder.Date.min()).days,time_lag).tolist()
 			df_holder['Time From Deployment'] = [(dummy-df_holder.Date.min()).days + (dummy-df_holder.Date.min()).seconds/float(3600*24) for dummy in df_holder.Date]
 			#time from deployment is calculated like this to have the fractional day component
@@ -99,21 +99,22 @@ class argo_traj_data:
 
 			max_date = df_holder.Date.max()
 			df_holder['time_bins'] = pd.cut(df_holder['Time From Deployment'],bins = time_bins,labels=time_bins[:-1])
+			#cut df_holder into a series of time bins, then drop duplicate time bins and only keep the first, this enforces the decorrelation criteria
 			for row in df_holder.dropna(subset=['time_bins']).drop_duplicates(subset=['time_bins'],keep='first').iterrows():
 				dummy, row = row
-				cruise_list.append(row['Cruise'])
-				start_date_list.append(row['Date'])
-				start_bin_list.append(row['bin_index'])
-				position_type_list.append(row['position type'])
+				cruise_list.append(row['Cruise']) # record cruise information
+				start_date_list.append(row['Date']) # record date information
+				start_bin_list.append(row['bin_index']) # record which bin was started in  
+				position_type_list.append(row['position type']) # record positioning information
 				location_tuple = []
-				for time_addition in [datetime.timedelta(days=x) for x in time_delta_list]:
-					final_date = row['Date']+time_addition
+				for time_addition in [datetime.timedelta(days=x) for x in time_delta_list]: # for all the time additions that we need to calculate
+					final_date = row['Date']+time_addition # final date is initial date plus the addition
 					if final_date>max_date:
-						location_tuple.append(np.nan)
+						location_tuple.append(np.nan) #if the summed date is greater than the record, do not include in any transition matrix calculations
 					else:
-						final_dataframe_date = find_nearest(df_holder.Date,final_date)
-						if abs((final_dataframe_date-final_date).days)>30:
-							location_tuple.append(np.nan)
+						final_dataframe_date = find_nearest(df_holder.Date,final_date) #find the nearest record to the final date
+						if abs((final_dataframe_date-final_date).days)>30: 
+							location_tuple.append(np.nan) #if this nearest record is greater than 30 days away from positioning, exclude
 						else:
 							location_tuple.append(df_holder[df_holder.Date==final_dataframe_date].bin_index.values[0]) # find the nearest date and record the bin index
 				final_bin_list.append(tuple(location_tuple))
