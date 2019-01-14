@@ -10,7 +10,9 @@ from matplotlib.patches import Polygon
 from itertools import groupby
 import pickle
 import scipy
+
 """compiles and compares transition matrix from trajectory data. """
+
 class Basemap(Basemap):
     def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
         """
@@ -491,14 +493,14 @@ class argo_traj_data(argo_traj_data):
         m.fillcontinents(color='coral',lake_color='aqua')
 
         m.drawcoastlines()
-        Y = np.arange(-68,66,degree_sep)
-        X = np.arange(-162,162,degree_sep)
-        XX,YY = np.meshgrid(X,Y)
+        Y_ = np.arange(-68.0,66.0,degree_sep)
+        X_ = np.arange(-162.0,162.0,degree_sep)
+        XX,YY = np.meshgrid(X_,Y_)
         n_s = np.zeros(XX.shape)
         e_w = np.zeros(XX.shape)
         XX,YY = m(XX,YY)
-        for i,lat in enumerate(Y):
-            for k,lon in enumerate(X):
+        for i,lat in enumerate(Y_):
+            for k,lon in enumerate(X_):
                 print 'lat = ',lat
                 print 'lon = ',lon 
                 try:
@@ -513,7 +515,7 @@ class argo_traj_data(argo_traj_data):
                 mask = (x!=0)|(y!=0) 
                 x = x[mask]
                 y = y[mask]
-                try: 
+                try:
                     w,v = np.linalg.eig(np.cov(x,y))
                 except:
                     continue
@@ -526,6 +528,7 @@ class argo_traj_data(argo_traj_data):
                 try:
                     poly = m.ellipse(lon, lat, axis1*scale_factor,axis2*scale_factor, 80,phi=angle, facecolor='green', zorder=3,alpha=0.35)
                 except ValueError:
+                    print ' there was a value error in the calculation of the transition_matrix'
                     continue
         e_w = np.ma.array(e_w,mask=(e_w==0))
         n_s = np.ma.array(n_s,mask=(n_s==0))
@@ -771,82 +774,78 @@ class argo_traj_data(argo_traj_data):
         m.scatter(x,y,marker='*',color='r',s=30)        
         plt.show()
 
+    def load_corr_array(self,variable,lat,lon):
+        cor_folder = './'+str(variable)+'/'
+        lon_ = lon
+        if lon_>80:
+            lon_ -= 360
+        if lon_<-260:
+            lon_ += 360
+        file_ = cor_folder+str(lat)+'_'+str(lon_)+'.npy'
+        try:
+            array_ = np.load(file_)
+        except IOError:
+            print 'could not load file, lon is ',lon_,' lat is ',lat
+            index_list = [self.total_list.index([lat,lon])]
+            data_list = [1]
+            return (data_list,index_list)
+        lat_list = np.arange(float(lat),float(lat)-12,(-1*self.degree_bins))[::-1].tolist()+np.arange(float(lat),float(lat)+12,self.degree_bins)[1:].tolist()
+        column_index_list = np.arange(lat-12,lat+12,0.5).tolist()
+        lon_list = np.arange(float(lon),float(lon)-12,(-1*self.degree_bins))[::-1].tolist()+np.arange(float(lon),float(lon)+12,self.degree_bins)[1:].tolist()
+        row_index_list = np.arange(lon-12,lon+12,0.5).tolist()
+        data_list = []
+        index_list = []
+        Y,X = np.meshgrid(lat_list,lon_list)
+        for token in zip(Y.flatten(),X.flatten()):
+            token = list(token)
+            # try:
+            row = row_index_list.index(token[1])
+            column = column_index_list.index(token[0])
+            if token[1]>180:
+                token[1]-=360
+            if token[1]<-180:
+                token[1]+=360
+            try:
+                index_list.append(self.total_list.index(token))
+                data_list.append(array_[row,column])
+            except ValueError:
+                print 'there was a mistake in the index_list'
+                print token
+                continue
+        assert len(data_list)>0
+        assert len(index_list)>0
+        return (data_list,index_list)
+
     def load_corr_matrix(self,variable):
         try:
             self.cor_matrix = load_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz')
         except IOError:
-            with open(self.base_file+variable+"_array_list", "rb") as fp:   
-                array_list = pickle.load(fp)
-
-            with open(self.base_file+variable+"_position_list", "rb") as fp:
-                position_list = pickle.load(fp)
-
-            base_list,alt_list = zip(*position_list)    #the positions are saved as column, row pairs
-            base_lat,base_lon = zip(*base_list)
-            alt_lat,alt_lon = zip(*alt_list)
-
-            base_lon = np.array(base_lon); alt_lon = np.array(alt_lon)
-            base_lat = np.array(base_lat); alt_lat = np.array(alt_lat)
-            array_list = np.array(array_list)
-            base_lon[base_lon<-180] = base_lon[base_lon<-180]+360   # put the data into -180 to 180 lon format
-            alt_lon[alt_lon<-180] = alt_lon[alt_lon<-180]+360   
-
-            total_lat,total_lon = zip(*self.total_list)
-            subsampled_bins_lon = [find_nearest(np.unique(base_lon), i) for i in np.unique(total_lon)]
-            subsampled_bins_lat = [find_nearest(np.unique(base_lat), i) for i in np.unique(total_lat)]
-            base_mask = np.isin(base_lon,subsampled_bins_lon)&np.isin(base_lat,subsampled_bins_lat)
-
-            subsampled_bins_lon = [find_nearest(np.unique(alt_lon), i) for i in np.unique(total_lon)]
-            subsampled_bins_lat = [find_nearest(np.unique(alt_lat), i) for i in np.unique(total_lat)]
-            alt_mask = np.isin(alt_lon,subsampled_bins_lon)&np.isin(alt_lat,subsampled_bins_lat)
-
-            mask = alt_mask&base_mask
-
-            base_lon = base_lon[mask]; alt_lon = alt_lon[mask]
-            base_lat = base_lat[mask]; alt_lat = alt_lat[mask]
-            array_list = array_list[mask]
-
-            base_lon = [find_nearest(self.bins_lon, i) for i in base_lon]
-            base_lat = [find_nearest(self.bins_lat, i) for i in base_lat]           
-            alt_lon = [find_nearest(self.bins_lon, i) for i in alt_lon]
-            alt_lat = [find_nearest(self.bins_lat, i) for i in alt_lat]         
-
-            column_list = [x for x in range(len(self.total_list))] # initialize these lists with 1 along the diagonal to represent perfect correlation in grid cell
-            row_list = [x for x in range(len(self.total_list))]
-            data_list = [1 for x in range(len(self.total_list))]
-
-            for base,alt,val in zip(zip(base_lat,base_lon),zip(alt_lat,alt_lon),array_list):
-                b_lat, b_lon = base
-                try:
-                    col_temp = [self.total_list.index(list(base))]
-                    row_temp = [self.total_list.index(list(alt))]
-                    value_temp = [val]
-                except ValueError:
-                    print 'I was unsuccessful'
-                    print b_lat
-                    print b_lon
-                    continue
-                else:
-                    print 'I sucessfully added to the lists'
-                    print base
-                    print alt
-                    column_list += col_temp
-                    row_list += row_temp
-                    data_list += value_temp
-            
+            np.load(variable+'_corr.npy')
+            data_list = []
+            row_list = []
+            column_list = []
+            for n,token in enumerate(self.total_list):
+                print n
+                base_lat,base_lon = token
+                data_list_token,row_list_token = self.load_corr_array(variable,base_lat,base_lon)
+                print row_list_token
+                row_list += row_list_token
+                column_list += [n]*len(row_list_token)
+                data_list += data_list_token            
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
-for token in [(2,0.2),(4,1)]:
+
+for token in [(2,1),(4,1)]:
     degree,scale = token
     traj_class = argo_traj_data(degree_bins=degree)
     traj_class.get_direction_matrix()
-    traj_class.load_corr_matrix('o2')
-    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
-    plt.title('O2 correlation ellipses')
-    plt.savefig(traj_class.base_file+'/transition_plots/o2_correlation_degree_bins_'+str(degree)+'.png')
-    plt.close()
+    # traj_class.load_corr_matrix('o2')
+    # traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
+    # plt.title('O2 correlation ellipses')
+    # plt.savefig(traj_class.base_file+'/transition_plots/o2_correlation_degree_bins_'+str(degree)+'.png')
+    # plt.close()
     traj_class.load_corr_matrix('pco2')
-    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
+    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=2,scale_factor=10)
     plt.title('pCO2 correlation ellipses')
     plt.savefig(traj_class.base_file+'/transition_plots/pco2_correlation_degree_bins_'+str(degree)+'.png')
     plt.close()
