@@ -217,7 +217,7 @@ plt.close()
 
 
 fig, ax = plt.subplots()
-for number in [(1,3),(1.5,4),(2,6),(2,4)]:
+for number in [(1,3),(1.5,4.5),(2,6),(2,4)]:
 	dummy_lat = np.arange(-90,90.1,number[0]).tolist()
 	dummy_lon = np.arange(-180,180.1,number[1]).tolist()
 	df['bins_lat'] = pd.cut(df.Lat,bins = dummy_lat,labels=dummy_lat[:-1])
