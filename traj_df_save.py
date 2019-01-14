@@ -126,10 +126,11 @@ m = Basemap(projection='cyl',fix_aspect=False)
 # m.fillcontinents(color='coral',lake_color='aqua')
 m.drawcoastlines()
 XX,YY = m(X,Y)
-m.pcolor(X,Y,np.ma.masked_equal(speed_mean_matrix,0))
-plt.title('Raw Mean Speed')
-plt.colorbar(label='km/hr')
-
+m.pcolor(X,Y,np.log(np.ma.masked_equal(speed_mean_matrix,0)))
+plt.title('Log Raw Mean Speed')
+plt.colorbar(label='log(km/hr)')
+plt.savefig(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/raw_data_statistics/map_of_raw_mean_speed.png')
+plt.close()
 
 plt.figure(figsize=(10,10))
 m = Basemap(projection='cyl',fix_aspect=False)
@@ -139,7 +140,8 @@ XX,YY = m(X,Y)
 m.pcolor(X,Y,np.ma.masked_equal(speed_variance_matrix,0))
 plt.title('Raw Mean Variance')
 plt.colorbar(label='$km^2/hr^2$')
-
+plt.savefig(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/raw_data_statistics/map_of_raw_speed_variance.png')
+plt.close()
 
 df_rejected = df[df.Cruise.isin(df[df.reject==True].Cruise.unique())]
 df = df[~df.Cruise.isin(df[df.reject==True].Cruise.unique())]
@@ -196,23 +198,41 @@ df = pd.concat([df_rejected[(df_rejected.percentage<percent_reject)&(df_rejected
 df_rejected = df_rejected[~df_rejected.Cruise.isin(df.Cruise.unique())]
 ############ Plot the data ######################
 fig, ax = plt.subplots()
-for number in [1+x for x in range(4)]:
-	dummy_lat = np.arange(-90,90.1,number).tolist()
-	dummy_lon = np.arange(-180,180.1,number).tolist()
+for number in [(1,1),(2,2),(3,3),(4,4)]:
+	dummy_lat = np.arange(-90,90.1,number[0]).tolist()
+	dummy_lon = np.arange(-180,180.1,number[1]).tolist()
 	df['bins_lat'] = pd.cut(df.Lat,bins = dummy_lat,labels=dummy_lat[:-1])
 	df['bins_lon'] = pd.cut(df.Lon,bins = dummy_lon,labels=dummy_lon[:-1])
 	assert (~df['bins_lat'].isnull()).all()
 	assert (~df['bins_lon'].isnull()).all()
 	df['bin_index'] = zip(df['bins_lat'].values,df['bins_lon'].values)
-	df.groupby('bin_index').count()['Cruise'].hist(label=str(number)+' degree bins',alpha=0.5,bins=500)
+	df.groupby('bin_index').count()['Cruise'].hist(label='lat '+str(number[0])+', lon '+str(number[1])+' degree bins',alpha=0.5,bins=500)
 plt.xlim([0,2000])
 ax.set_yscale('log')
 plt.ylabel('Number of bins')
 plt.xlabel('Number of displacements')
 plt.legend()
-plt.savefig(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/raw_data_statistics/number_displacements_degree_bin.png')
+plt.savefig(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/raw_data_statistics/number_displacements_degree_bin_1.png')
 plt.close()
 
+
+fig, ax = plt.subplots()
+for number in [(1,3),(1.5,4),(2,6),(2,4)]:
+	dummy_lat = np.arange(-90,90.1,number[0]).tolist()
+	dummy_lon = np.arange(-180,180.1,number[1]).tolist()
+	df['bins_lat'] = pd.cut(df.Lat,bins = dummy_lat,labels=dummy_lat[:-1])
+	df['bins_lon'] = pd.cut(df.Lon,bins = dummy_lon,labels=dummy_lon[:-1])
+	assert (~df['bins_lat'].isnull()).all()
+	assert (~df['bins_lon'].isnull()).all()
+	df['bin_index'] = zip(df['bins_lat'].values,df['bins_lon'].values)
+	df.groupby('bin_index').count()['Cruise'].hist(label='lat '+str(number[0])+', lon '+str(number[1])+' degree bins',alpha=0.5,bins=500)
+plt.xlim([0,2000])
+ax.set_yscale('log')
+plt.ylabel('Number of bins')
+plt.xlabel('Number of displacements')
+plt.legend()
+plt.savefig(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/raw_data_statistics/number_displacements_degree_bin_2.png')
+plt.close()
 
 ############## Tests ################
 # assert df.pres.min()>800
