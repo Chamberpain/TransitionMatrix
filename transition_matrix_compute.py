@@ -26,13 +26,13 @@ def load_sparse_csr(filename):
 __file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
 
 class argo_traj_data:
-	def __init__(self,degree_bins=1,date_span_limit=60):
+	def __init__(self,degree_bin_lat=2,degree_bin_lon=2,date_span_limit=60):
 		print 'I have started argo traj data'
 		self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'
-		self.degree_bins = int(degree_bins)
+		self.degree_bins = (int(degree_bin_lat),int(degree_bin_lon))
 		self.date_span_limit = date_span_limit
-		self.bins_lat = np.arange(-90,90.1,self.degree_bins).tolist()
-		self.bins_lon = np.arange(-180,180.1,self.degree_bins).tolist()
+		self.bins_lat = np.arange(-90,90.1,self.degree_bins[0]).tolist()
+		self.bins_lon = np.arange(-180,180.1,self.degree_bins[1]).tolist()
 		if 180.0 not in self.bins_lon:
 			print '180 is not divisable by the degree bins chosen'		#need to add this logic for the degree bin choices that do not end at 180.
 			raise
@@ -50,15 +50,15 @@ class argo_traj_data:
 		assert self.df.Lat.min() >=-90
 		print 'Displacement dataframe passed necessary tests'
 		try:
-			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
+			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'.pickle')
 		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
 			self.recompile_transition_df()
 		self.end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
 		self.df_transition = self.df_transition.dropna(subset=[self.end_bin_string])
-		self.identify_problems_df_transition()
 		print 'Transition dataframe passed all necessary tests'
 		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
+			print 'Removing end bin strings that do not have a start bin string associated'
 			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
@@ -134,36 +134,7 @@ class argo_traj_data:
 		df_dict['end bin'] = final_bin_list
 		self.df_transition = pd.DataFrame(df_dict)
 		if dump:
-			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
-
-	def identify_problems_df_transition(self,plot=True):
-		"""
-		Initiates tests to make sure the transition matrix has reasonable statistics
-
-		todo: consider making this a check for generic matrices, and impliment this test at every level of the code
-		"""
-		degree_max = self.date_span_limit/3.
-		lat1,lon1 = zip(*self.df_transition['start bin'].values)
-		lat2,lon2 = zip(*self.df_transition[self.end_bin_string].values)
-		lat_diff = abs(np.array(lat1)-np.array(lat2))
-		lon_diff = abs(np.array(lon1)-np.array(lon2))
-		lon_diff[lon_diff>180] = abs(lon_diff[lon_diff>180]-360)
-		distance = np.sqrt((lon_diff*np.cos(lat1))**2+lat_diff**2)
-		self.df_transition['distance_check'] = distance 
-		cruise_list = self.df_transition[self.df_transition.distance_check>degree_max].Cruise.unique()
-		if plot:
-			for cruise in cruise_list:
-				df_holder = self.df[self.df.Cruise==cruise]
-				df_holder1 = self.df_transition[self.df_transition.Cruise==cruise]
-				x = df_holder.Lon.values
-				y = df_holder.Lat.values
-				plt.plot(x,y)
-				plt.scatter(x,y)
-				plt.title('Max distance is '+str(df_holder1.distance_check.max()))
-				plt.savefig(self.base_file+'/diagnostic_bad_cruises/'+str(cruise)+'_'+str(self.degree_bins)+'_'+str(self.date_span_limit))
-				plt.close()
-		self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(cruise_list)]
-
+			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'.pickle')
 
 	def recompile_transition_matrix(self,dump=True):
 		"""
@@ -200,32 +171,7 @@ class argo_traj_data:
 				num_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq])) # this is where we save the data density of every cell
 				num_test_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq]))
 				test_list.append(data)
-			# else:
-			# 	print 'the frame cut was empty, so I will calculate the scaled dispersion'
-			# 	test_list = []
-			# 	diagonal = 1
-			# 	for qq in frame['end bin'].unique():
-			# 		try:
-			# 			qq_index = self.total_list.index(list(qq))
-			# 		except ValueError:
-			# 			print qq,' was not in the list'
-			# 			continue
-			# 		frame_holder = frame[frame['end bin']==qq]
-			# 		percentage_of_floats = len(frame_holder)/float(len(frame))
-			# 		frame_holder['time step percent'] = self.date_span_limit/frame_holder['date span']
-			# 		frame_holder[frame_holder['time step percent']>1]=1
-			# 		off_diagonal = len(frame_holder)/float(len(frame))*frame_holder['time step percent'].mean()
-			# 		diagonal -= off_diagonal
-			# 		row_list.append(qq_index)
-			# 		column_list.append(ii_index)
-			# 		data_list.append(off_diagonal)
-			# 		test_list.append(off_diagonal)
-			# 		print off_diagonal
-			# 	print diagonal
-			# 	row_list.append(ii_index)
-			# 	column_list.append(ii_index)
-			# 	data_list.append(diagonal)
-			# 	test_list.append(diagonal)
+
 			assert abs(sum(test_list)-1)<0.01	#ensure that all columns scale to 1
 			assert ~np.isnan(data_list).any()
 			assert (np.array(data_list)<=1).all()
