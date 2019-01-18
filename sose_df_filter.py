@@ -9,6 +9,7 @@ def visual_check():
 	y = df.Lat.values
 	depth = df.Depth.values
 	plt.scatter(x[::20],y[::20],c=depth[::20])
+	plt.colorbar()
 	plt.show()
 
 sose_df_file_name = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose_particle_df.pickle'
@@ -30,4 +31,9 @@ for i,lon in enumerate(XC[:-1]):
 		df.loc[(df.bins_lat==lat)&(df.bins_lon==lon),'Depth']=Depth[i,j]
 
 visual_check()
-
+df['Date'] = pd.to_datetime(df.Date)
+df = df[~df.Cruise.isin(df[df.Depth<1200].Cruise.unique())]
+df['Lon'] = oceans.wrap_lon180(df.Lon)
+assert df.Lon.max()<=180
+assert df.Lon.min()>=-180
+df.to_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose/all_argo_traj.pickle')
