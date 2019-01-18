@@ -26,9 +26,14 @@ def load_sparse_csr(filename):
 __file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
 
 class argo_traj_data:
-	def __init__(self,degree_bin_lat=2,degree_bin_lon=2,date_span_limit=60):
+	def __init__(self,degree_bin_lat=2,degree_bin_lon=2,date_span_limit=60,traj_file_type='Argo'):
+		if traj_file_type=='Argo':
+			self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'	#this is a total hack to easily change the code to run sose particles
+		elif traj_file_type=='SOSE':
+			self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose/'
+			print 'I am loading SOSE data'
+
 		print 'I have started argo traj data'
-		self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'
 		self.degree_bins = (int(degree_bin_lat),int(degree_bin_lon))
 		self.date_span_limit = date_span_limit
 		self.bins_lat = np.arange(-90,90.1,self.degree_bins[0]).tolist()
@@ -62,8 +67,8 @@ class argo_traj_data:
 			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
 		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
 
-		try: # try to load the transition matrix
-			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
+		try: # try to load the transition matrix 
+			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
