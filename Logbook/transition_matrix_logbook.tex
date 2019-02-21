@@ -38,4 +38,14 @@ The Transition Matrix Project seeks to implement the best solution of an Argo de
 \item Finish bias analysis for grid sizes and time steps using model output
 \end{itemize}
 
+\section{Jan 20, 2019}
+I am embarassed to say that somehow in copying the transition matrix logbook over to the kalman smoother folder, I completely deleted the entire thing. Oh well, that work is lost. Time to start anew. 
+
+I am almost done running the transition matrix calculations for the model data that Isa provided me. She gave me 6 years of particle release data from SOSE. A total of 10000 points. Many of those particles passed close to land and I filtered to remove all particles that passed through a depth of 7071, or travelled outside the domain. I was left with 7071 particles. I have started calculations for [(.5,.5),(2,3),(3,6),(1,1),(2,2),(3,3),(4,4)] resolutions in longitude, latitude. One things that these calculations highlighted is that there is a bug in plotting routine which uses the number of points to mask all of the transition and standard error maps: the grid is being masked based if 0 cells end up in the grid cell they started in. This has nothing to do with the transition matrix statistics. I need to ponder the best way to fix this... 
+
+\section{Feb 21, 2019}
+It has been almost a month since my previous entry. I am back in San Diego and getting used to life in the real world again. The plotting routine is fixed and I should be able to asses in a quantitative way the standard error of each grid cell. There is a lot of interesting structure in the number matrix of these transition and it will be interesting to compare to bathymetry.
+
+My thoughts on the data withholding experiments are to generate transition matrices with the withheld floats and then compare the eigenvalues of the difference. Also compute the statistics of the withheld float passing into projected grid cells.
+
 \end{document}
