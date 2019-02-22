@@ -48,4 +48,43 @@ It has been almost a month since my previous entry. I am back in San Diego and g
 
 My thoughts on the data withholding experiments are to generate transition matrices with the withheld floats and then compare the eigenvalues of the difference. Also compute the statistics of the withheld float passing into projected grid cells.
 
+\section{Feb 22, 2019}
+Following a meeting with Lynne yesterday in which I showed her some spatial structure in the transition density plots (see fig \ref{fig:sose_transition_density}), she recommended plotting the SOSE mean kinetic energy and EKE. I also plotted the depth, because I thought this might be a geostrophic effect (see figs \ref{fig:sose_depth},\ref{fig:sose_kinetic_energy},\ref{fig:sose_EKE}). None of these plots specifically matched the structure seen in the transition density plots, so I additionally on a hunch I plotted the divergence of kinetic energy and EKE (see figs \ref{fig:sose_gradient_EKE},\ref{fig:sose_gradient_kinetic_energy}). These much more closely match the structure seen in the Fig \ref{fig:sose_transition_density}. Now I am suspecting that the absense of transtions may be caused at first order by divergence in the velocity field caused by downwelling at frontal boundaries. My explanation of what transition density was again very tortured and incoherent, so I decided to come up with a series of figures to describe exactly what it is that I am plotting. These are contained in this folder.
+
+\begin{figure}
+\caption{SOSE Dataset Transition Density (1,1) grid size 80 day timestep}
+\includegraphics[width=\linewidth]{number_matrix_degree_bins_(1_1)_time_step_80}
+\label{fig:sose_transition_density}
+\end{figure}
+
+\begin{figure}
+\caption{SOSE Domain Depth}
+\includegraphics[width=\linewidth]{depth}
+\label{fig:sose_depth}
+\end{figure}
+
+\begin{figure}
+\caption{Mean SOSE Kinetic Energy}
+\includegraphics[width=\linewidth]{mean_energy}
+\label{fig:sose_kinetic_energy}
+\end{figure}
+
+\begin{figure}
+\caption{Mean SOSE EKE}
+\includegraphics[width=\linewidth]{mean_eke}
+\label{fig:sose_EKE}
+\end{figure}
+
+\begin{figure}
+\caption{Divergence of Mean SOSE Kinetic Energy}
+\includegraphics[width=\linewidth]{gradient_mean_energy}
+\label{fig:sose_gradient_kinetic_energy}
+\end{figure}
+
+\begin{figure}
+\caption{Divergence Mean SOSE EKE}
+\includegraphics[width=\linewidth]{gradient_mean_eke}
+\label{fig:sose_gradient_EKE}
+\end{figure}
+
 \end{document}
