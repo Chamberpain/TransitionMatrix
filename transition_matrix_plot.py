@@ -1,7 +1,6 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
-from transition_matrix_compute import argo_traj_data,load_sparse_csr,save_sparse_csr
-from transition_matrix_compute import find_nearest
+from transition_matrix_compute import argo_traj_data,load_sparse_csr,save_sparse_csr,find_nearest
 import numpy as np
 from scipy.interpolate import griddata
 import pandas as pd
@@ -153,7 +152,7 @@ class argo_traj_data(argo_traj_data):
         # m.fillcontinents(color='coral',lake_color='aqua')
         m.drawcoastlines()
         XX,YY = m(self.X,self.Y)
-        transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(np.diagonal(self.number_matrix.todense()))==0)
+        transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(self.number_matrix==0))
         m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=1) # this is a plot for the tendancy of the residence time at a grid cell
         plt.colorbar(label='% particles dispersed')
         plt.title('1 - diagonal of transition matrix',size=30)
@@ -263,28 +262,34 @@ class argo_traj_data(argo_traj_data):
         plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
         plt.close()
 
-    def trans_number_matrix_plot(self): 
+    def trans_number_matrix_plot(self,region='global'): 
         try:
             self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
             self.standard_error = load_sparse_csr(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the number matrix could not be loaded'
             self.recompile_transition_matrix(dump=True)
-        k = np.diagonal(self.number_matrix.todense())
+        k = self.number_matrix.sum(axis=0)
+        k = k.T
+        print k
         number_matrix_plot = self.transition_vector_to_plottable(k)
         plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
         # m.fillcontinents(color='coral',lake_color='aqua')
+        if region == 'global':
+            print 'I am plotting global region'
+            m = Basemap(projection='cyl',fix_aspect=False)
+        if region == 'antarctic':
+            print 'I am plotting antarctic region'
+            m = Basemap(projection='spstere',boundinglat=-25,lon_0=0,resolution='l')
         m.drawcoastlines()
         XX,YY = m(self.X,self.Y)
         # number_matrix_plot[number_matrix_plot>1000]=1000
-        number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)
+        number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
         m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
         plt.title('Transition Density',size=30)
         plt.colorbar(label='Number of float transitions')
         plt.savefig(self.base_file+'/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         plt.close()
-
         k = np.diagonal(self.standard_error.todense())
         standard_error_plot = self.transition_vector_to_plottable(k)
         plt.figure(figsize=(10,10))
@@ -312,29 +317,13 @@ class argo_traj_data(argo_traj_data):
 
 
     def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
-        vmax = 0.4
         transition_matrix_plot = matrix_a-matrix_b
-        k = np.diagonal(transition_matrix_plot.todense())
-
-        transition_plot = self.transition_vector_to_plottable(k)
-        num_matrix_a = self.transition_vector_to_plottable(np.diagonal(num_matrix_a.todense()))
-        num_matrix_b = self.transition_vector_to_plottable(np.diagonal(num_matrix_b.todense()))
-        transition_plot = np.ma.array(transition_plot,mask=(num_matrix_a==0)|(num_matrix_b==0)|np.isnan(transition_plot))
-        print 'maximum of comparison is ', transition_plot.max()
-        print 'minimum of comparison is ', transition_plot.min()
-
-        plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        m.drawmapboundary(fill_color='grey')
-        XX,YY = m(self.X,self.Y)
-        m.pcolormesh(XX,YY,transition_plot,vmin=-vmax,vmax=vmax,cmap=plt.cm.seismic) # this is a plot for the tendancy of the residence time at a grid cell
-        plt.colorbar(label='% particles dispersed')
+        transition_matrix_plot = np.ma.array(transition_matrix_plot,mask=(num_matrix_a==0)|(num_matrix_b==0)|np.isnan(transition_plot))
+        traj_class.get_direction_matrix()
+        traj_class.quiver_plot(transition_matrix_plot,arrows=False,degree_sep=2,scale_factor=100)
         plt.title(title,size=30)
         plt.savefig(save_name)
         plt.close()
-
 
     def gps_argos_compare(self):
         """
@@ -681,7 +670,7 @@ class argo_traj_data(argo_traj_data):
         print type(self.w)
         print type(target_vector)
         #desired_vector, residual = scipy.optimize.nnls(np.matrix(self.w.todense()),np.squeeze(target_vector))
-        optimize_fun = scipy.optimize.lsq_linear(self.w,np.squeeze(target_vector),bounds=(0,self.degree_bins),verbose=2)
+        optimize_fun = scipy.optimize.lsq_linear(self.w,np.squeeze(target_vector),bounds=(0,self.degree_bins[0]*self.degree_bins[1]),verbose=2)
         desired_vector = optimize_fun.x
 
         y,x = zip(*np.array(self.total_list)[desired_vector>0.1])
@@ -835,30 +824,10 @@ class argo_traj_data(argo_traj_data):
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
 
-for token in [(2,1),(4,1)]:
-    degree,scale = token
-    traj_class = argo_traj_data(degree_bins=degree)
-    traj_class.get_direction_matrix()
-    # traj_class.load_corr_matrix('o2')
-    # traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=6,scale_factor=scale)
-    # plt.title('O2 correlation ellipses')
-    # plt.savefig(traj_class.base_file+'/transition_plots/o2_correlation_degree_bins_'+str(degree)+'.png')
-    # plt.close()
-    traj_class.load_corr_matrix('pco2')
-    traj_class.quiver_plot(traj_class.cor_matrix,arrows=False,degree_sep=2,scale_factor=10)
-    plt.title('pCO2 correlation ellipses')
-    plt.savefig(traj_class.base_file+'/transition_plots/pco2_correlation_degree_bins_'+str(degree)+'.png')
-    plt.close()
-    # for time in np.arange(20,260,40):
-    #     print 'plotting for degree ',degree,' and time ',time
-    #     traj_class = argo_traj_data(degree_bins=degree,date_span_limit=time)
-    #     traj_class.get_direction_matrix()
-    #     traj_class.trans_number_matrix_plot()
-    #     traj_class.transition_matrix_plot(filename='base_transition_matrix')
-    #     plt.figure(figsize=(10,10))
-    #     traj_class.quiver_plot(traj_class.transition_matrix)
-    #     plt.savefig(traj_class.base_file+'/transition_plots/quiver_diagnose_degree_bins_'+str(degree)+'_time_step_'+str(time)+'.png')
-    #     plt.close()
-    #     if time == 20:
-    #         traj_class.argo_dense_plot()
-    #         traj_class.dep_number_plot()
+for token in [(2,3),(3,6),(1,1),(2,2),(3,3),(4,4)]:
+    lat,lon = token
+    print lat
+    print lon
+    for date in [20,40,60,80,100,120,140,160,180]:
+        traj_class = argo_traj_data(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date,traj_file_type='SOSE')
+        traj_class.trans_number_matrix_plot(region='antarctic')
