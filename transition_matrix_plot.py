@@ -94,54 +94,6 @@ class argo_traj_data(argo_traj_data):
         z_stat = (p_1-p_2)/np.sqrt(self.transition_matrix.todense()*(1-self.transition_matrix.todense())*(1/n_1+1/n_2))
         assert (np.abs(z_stat)<1.96).data.all()
 
-    def data_withholding_routine(self,test_df):
-        pdf_list = []
-        cruise_len = len(test_df.Cruise.unique())
-        for t,cruise in enumerate(test_df.Cruise.unique()):
-            print cruise_len-t,' cruises remaining'
-            token = test_df[test_df.Cruise==cruise]
-            token['days from start'] = (token.Date-token.Date.min()).dt.days
-            try:
-                start_index= self.total_list.index(list(token.bin_index.values[0]))
-            except ValueError:
-                pdf_list+=[0,0,0,0,0,0]
-                print 'i have incountered at error, adding zeros to the pdf list'
-            for k in range(7)[1:]:
-                self.load_w(k)
-                pdf = self.w[:,start_index].todense()
-                pdf_mean = pdf[pdf>0].mean()
-                delta_days = find_nearest(token['days from start'].values,self.date_span_limit*k) 
-                assert delta_days>=0
-                try:
-                    end_index = self.total_list.index(list(token[token['days from start']==delta_days].bin_index.values[0]))
-                    pdf_list.append(pdf[end_index].item()/pdf_mean)
-                except ValueError:
-                    pdf_list.append(0)
-                    print 'i have encountered an error, adding a zero to the list'
-        return pdf_list
-
-
-    def data_withholding_setup(self):
-        self.delete_w()
-        mylist = traj_class.df_transition.Cruise.unique().tolist()
-        not_mylist = [mylist[i] for i in sorted(random.sample(xrange(len(mylist)), int(round(len(mylist)/20)))) ]
-        df_holder = self.df[self.df.Cruise.isin(not_mylist)]
-        null_hypothesis = self.data_withholding_routine(df_holder)
-
-        self.delete_w()
-        self.df_transition = self.df_transition[~self.df_transition.Cruise.isin(not_mylist)]
-        self.df_transition = self.df_transition.reset_index(drop=True)
-        while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]): #need to loop this
-            self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
-        self.recompile_transition_matrix(dump=False)
-        data_withheld = self.data_withholding_routine(df_holder)
-        plt.hist(null_hypothesis,bins=50,density=True,color='r',alpha=0.5,label='Null Hypothesis')
-        plt.hist(data_withheld,bins=50,density=True,color='b',alpha=0.5,label='Data Withheld')
-        plt.legend()
-        plt.xlabel('Normalized Probability')
-        plt.title('Data Withholding Experiment Comparison')
-        plt.show()
-
     def transition_matrix_plot(self,filename,load_number_matrix=True):
         if load_number_matrix:
             self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
@@ -273,14 +225,18 @@ class argo_traj_data(argo_traj_data):
         k = k.T
         print k
         number_matrix_plot = self.transition_vector_to_plottable(k)
-        plt.figure(figsize=(10,10))
+        plt.figure('number matrix',figsize=(10,10))
         # m.fillcontinents(color='coral',lake_color='aqua')
         if region == 'global':
             print 'I am plotting global region'
             m = Basemap(projection='cyl',fix_aspect=False)
+            plt.figure('standard error',figsize=(10,10))
+            m1 = Basemap(projection='cyl',fix_aspect=False) #for the standard error plot
         if region == 'antarctic':
             print 'I am plotting antarctic region'
             m = Basemap(projection='spstere',boundinglat=-25,lon_0=0,resolution='l')
+            plt.figure('standard error',figsize=(10,10))
+            m1 = Basemap(projection='spstere',boundinglat=-25,lon_0=0,resolution='l') #for the standard error plots
         m.drawcoastlines()
         XX,YY = m(self.X,self.Y)
         # number_matrix_plot[number_matrix_plot>1000]=1000
@@ -293,13 +249,12 @@ class argo_traj_data(argo_traj_data):
         k = np.diagonal(self.standard_error.todense())
         standard_error_plot = self.transition_vector_to_plottable(k)
         plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
         # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        XX,YY = m(self.X,self.Y)
+        m1.drawcoastlines()
+        XX,YY = m1(self.X,self.Y)
         # number_matrix_plot[number_matrix_plot>1000]=1000
         standard_error_plot = np.ma.masked_equal(standard_error_plot,0)
-        m.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
+        m1.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
         plt.title('Standard Error',size=30)
         plt.colorbar(label='Standard Error')
         plt.savefig(self.base_file+'/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
