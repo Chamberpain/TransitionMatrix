@@ -6,11 +6,26 @@ import scipy
 
 class argo_withholding(argo_traj_data):
 
+    def transition_matrix_grid_transform(self):
+        
+
+    def time_offset_bias_calc(self):
+        return_list = []
+        for n in range(2,14): # transition matrices are calculated from 20 to 280 days, so this is the maximum
+            try:
+                test_matrix = load_sparse_csc(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(n*self.date_span_limit)+'.npz')
+            except NameError:
+                continue
+            self.load_w.number(n)
+            l2 = np.sqrt(((self.w-test_matrix).data**2).sum())
+            return_list.append((self.degree_bins,self.date_span_limit,l2))
+        return return_list
+
     def trajectory_data_withholding_setup(self,percentage):
 
         number_matrix = load_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         standard_error_matrix = load_sparse_csc(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-        df_tape = self.df_transition # this is a hack, so we dont have to reload every time
+        df_tape = self.df_transition.copy() # this is a hack, so we dont have to reload every time
         mylist = self.df_transition.Cruise.unique().tolist() # total list of floats
         not_mylist = [mylist[i] for i in sorted(random.sample(xrange(len(mylist)), int(round(len(mylist)*(1-percentage)))))] #randomly select floats to exclude
         df_holder = self.df_transition[self.df_transition.Cruise.isin(not_mylist)]
@@ -41,7 +56,8 @@ class argo_withholding(argo_traj_data):
 
         k = len(df_holder['start bin'].unique())
         for n,index in enumerate(df_holder['start bin'].unique()):
-            print 'made it through ',n,' bins. ',(k-n),' remaining'
+            if n%10==0:
+                print 'made it through ',n,' bins. ',(k-n),' remaining'
             dummy_num_list, dummy_data_list,dummy_row_list,dummy_column_list = self.column_compute(index)
             num_list += dummy_num_list
             data_list += dummy_data_list
@@ -50,7 +66,7 @@ class argo_withholding(argo_traj_data):
 
 
         withheld_matrix = scipy.sparse.csc_matrix((data_list,(row_list,col_list)),shape=(len(self.total_list),len(self.total_list)))
-
+        self.df_transition = df_tape
         return np.sqrt(((test_matrix-withheld_matrix).data**2).sum())
         # self.transition_matrix = self.add_noise(self.transition_matrix)
 
@@ -60,10 +76,13 @@ for token in [(2,3),(3,6),(1,1),(2,2),(3,3),(4,4)]:
     lat,lon = token
     date = 20
     traj_class = argo_withholding(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date,traj_file_type='SOSE')
+    df_transition_len = len(traj_class.df_transition)
     for percentage in np.arange(0.95,0.65,-0.05):
         repeat = 100
         while repeat >0:
             print 'repeat is ',repeat 
             repeat-=1
             l2 = traj_class.trajectory_data_withholding_setup(percentage)
+            assert df_transition_len == len(traj_class.df_transition)
+            print 'the length of the df is', len(traj_class.df_transition)
             master_list.append((token,percentage,l2))
