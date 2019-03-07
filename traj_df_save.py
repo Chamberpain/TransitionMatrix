@@ -7,6 +7,8 @@ import time # used for expressing how long each routine lasted.
 import numpy as np
 import oceans
 import matplotlib.pyplot as plt
+import os
+from mpl_toolkits.basemap import Basemap
 
 """file to create pandas dataframe from trajectory data"""
 max_speed = 5
@@ -15,27 +17,10 @@ percent_reject = 0.05
 f = open('traj_df_changelog.txt','w') #this is to keep a record of the floats that have been rejected
 degree_dist = 111.7	#The km distance of one degree
 
-def time_parser(juld_list):
-	ref_date = datetime.datetime(1950,1,1,1,1)
+def time_parser(juld_list,ref_date = datetime.datetime(1950,1,1,1,1)):
 	return [ref_date + datetime.timedelta(days=x) for x in juld_list]
 
-def frame_return(file_name):
-	traj_dict = scipy.io.loadmat(file_name)
-	lon_i = traj_dict['subxlon_i'].flatten().tolist() #actual last longitude of previous cycle for subsurface velocity estimates
-	lon_i = oceans.wrap_lon180(lon_i)
-	lon_f = traj_dict['subxlon_f'].flatten().tolist() #actual first longitude of current cycle for subsurface velocity estimates
-	lon_f = oceans.wrap_lon180(lon_f)
-	lat_i = traj_dict['subxlat_i'].flatten().tolist() #actual last latitude of previous cycle for subsurface velocity estimates
-	lat_f = traj_dict['subxlat_f'].flatten().tolist() #actual first latitude of current cycle for subsurface velocity estimates
-	pres = traj_dict['subpres'].flatten().tolist() #best estimate of drift pressure
-	date_i = time_parser(traj_dict['subxjday_i'].flatten().tolist()) #actual last time of previous cycle's surface period for subsurface velocity estimates
-	date_f = time_parser(traj_dict['subxjday_f'].flatten().tolist()) #actual first time of current cycle's surface period for subsurface velocity estimates
-
-	cruise = traj_dict['subwmo'][0]	#this is the WMO id number of the cruise
-	positioning_type = traj_dict['subtrans_sys'][0]	#this is the positioning type used for the cruise
-	assert ~all(v == len(lon_i) for v in [len(lon_i),len(lon_f),len(lat_i),len(lat_f),len(date_i),len(date_f),len(pres)])	# all lists have to be the same length
-	df_holder = pd.DataFrame({'position type':positioning_type,'Cruise':cruise,'lon_i':lon_i,'Lon':lon_f,'lat_i':lat_i,'Lat':lat_f,'date_i':date_i,'Date':date_f,'pres':pres}) # create dataframe of all data
-
+def frame_checker(df_holder):
 	if df_holder.empty:
 		f.write(str(cruise)+' was empty \n')	#write in the log that there were no data
 		return df_holder
@@ -66,9 +51,27 @@ def frame_return(file_name):
 	assert (df_holder.dropna(subset=['hour_diff'])['hour_diff']>0).all()
 	return df_holder
 
-try:
-	pd.read_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_unprocessed_traj.pickle')
-except IOError:
+def frame_return(file_name):
+	traj_dict = scipy.io.loadmat(file_name)
+	lon_i = traj_dict['subxlon_i'].flatten().tolist() #actual last longitude of previous cycle for subsurface velocity estimates
+	lon_i = oceans.wrap_lon180(lon_i)
+	lon_f = traj_dict['subxlon_f'].flatten().tolist() #actual first longitude of current cycle for subsurface velocity estimates
+	lon_f = oceans.wrap_lon180(lon_f)
+	lat_i = traj_dict['subxlat_i'].flatten().tolist() #actual last latitude of previous cycle for subsurface velocity estimates
+	lat_f = traj_dict['subxlat_f'].flatten().tolist() #actual first latitude of current cycle for subsurface velocity estimates
+	pres = traj_dict['subpres'].flatten().tolist() #best estimate of drift pressure
+	date_i = time_parser(traj_dict['subxjday_i'].flatten().tolist()) #actual last time of previous cycle's surface period for subsurface velocity estimates
+	date_f = time_parser(traj_dict['subxjday_f'].flatten().tolist()) #actual first time of current cycle's surface period for subsurface velocity estimates
+
+	cruise = traj_dict['subwmo'][0]	#this is the WMO id number of the cruise
+	positioning_type = traj_dict['subtrans_sys'][0]	#this is the positioning type used for the cruise
+	assert ~all(v == len(lon_i) for v in [len(lon_i),len(lon_f),len(lat_i),len(lat_f),len(date_i),len(date_f),len(pres)])	# all lists have to be the same length
+	df_holder = pd.DataFrame({'position type':positioning_type,'Cruise':cruise,'lon_i':lon_i,'Lon':lon_f,'lat_i':lat_i,'Lat':lat_f,'date_i':date_i,'Date':date_f,'pres':pres}) # create dataframe of all data
+	df_holder = frame_checker(df_holder)
+	return df_holder
+
+
+def matlab_df_return():
 	data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/Traj/mat/'
 	frames = []
 	matches = []
@@ -84,6 +87,62 @@ except IOError:
 	df.loc[df['position type'].isin(['GPS     ','IRIDIUM ']),'position type'] = 'GPS'
 	df.loc[df['position type'].isin(['ARGOS   ']),'position type'] = 'ARGOS'
 	assert ((df['position type']=='GPS')|(df['position type']=='ARGOS')).all()
+	return df
+
+def gps_df_return():
+	data_directory = os.getenv("HOME")+'/iCloud/Data/Raw/ARGO'
+	frames = []
+	matches = []
+	for root, dirnames, filenames in os.walk(data_directory): #this should be a class generator for paralization (accoording to gui)
+		for filename in fnmatch.filter(filenames, '*prof.nc'): #yield function should be used
+			matches.append(os.path.join(root, filename))
+	for n, match in enumerate(matches):
+		print 'file is ',match,', there are ',len(matches[:])-n,'floats left'
+		nc_fid = Dataset(match, 'r')
+		pos_type = ''.join([x for x in nc_fid.variables['POSITIONING_SYSTEM'][:][0].tolist() if x is not None])
+		cruise = ''.join([x for x in nc_fid.variables['PLATFORM_NUMBER'][:][0].tolist() if x is not None])
+		if pos_type == 'ARGOS':
+			continue
+		mode = nc_fid.variables['DATA_MODE'][:]
+		truth_list = mode!='R'
+		lat = nc_fid.variables['LATITUDE'][truth_list].tolist()
+		lon = nc_fid.variables['LONGITUDE'][truth_list].tolist()
+		pos_qc = nc_fid.variables['POSITION_QC'][truth_list].tolist() 
+		try:
+			date = nc_fid.variables['JULD_ADJUSTED'][truth_list].tolist()
+			date_qc = nc_fid.variables['JULD_ADJUSTED_QC'][truth_list]
+		except KeyError:
+			date = nc_fid.variables['JULD'][truth_list].tolist()
+			date_qc = nc_fid.variables['JULD_QC'][truth_list]
+		reference_date = ''.join(nc_fid.variables['REFERENCE_DATE_TIME'][:].tolist())
+		reference_date = datetime.datetime(int(reference_date[:4]),int(reference_date[4:6]),int(reference_date[6:8]))
+		if None in date:
+			continue
+		date = time_parser(date,ref_date=reference_date)
+		df_holder = pd.DataFrame({'Date':date,'DateQC':date_qc,'Lon':lon,'Lat':lat,'PosQC':pos_qc})
+		df_holder['Cruise']=cruise
+		df_holder['position type']='GPS'
+		df_holder = df_holder.drop_duplicates(subset='Date')
+		df_holder = df_holder.dropna(subset=['Lat','Lon'])
+		if df_holder.empty:
+			continue
+		df_holder = df_holder[(df_holder.DateQC=='1')&(df_holder.PosQC=='1')]
+		df_holder = frame_checker(df_holder)
+		frames.append(df_holder)
+	return pd.concat(frames)
+
+
+try:
+	pd.read_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_unprocessed_traj.pickle')
+except IOError:
+	df_matlab = matlab_df_return()
+	df_gps = gps_df_return()
+	df_gps = df_gps[~df_gps.Cruise.isin(df_matlab.Cruise.unique())]
+	df_gps = df_gps.drop_duplicates(subset=['Cruise','Date'])
+	df_gps = df_gps[[u'Cruise', u'Date', u'Lat', u'Lat Diff', u'Lat Speed',
+       u'Lon', u'Lon Diff', u'Lon Speed', u'Speed', u'hour_diff',
+       u'position type']]
+	df = pd.concat([df_matlab,df_gps])
 	df.to_pickle(os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/all_argo_unprocessed_traj.pickle')
 
 dummy_lat = np.arange(-90,90.1,4).tolist()
@@ -96,7 +155,7 @@ df['bins_lat'] = pd.cut(df.Lat,bins = dummy_lat,labels=dummy_lat[:-1])
 df['bins_lon'] = pd.cut(df.Lon,bins = dummy_lon,labels=dummy_lon[:-1])
 df['bin_index'] = zip(df['bins_lat'].values,df['bins_lon'].values)
 assert (~df['bins_lat'].isnull()).all()
-assert (~df['bins_lon'].isnull()).all()
+assert (~df['bins_lon'].isnull(        )).all()
 
 df['reject'] = False
 df.loc[df.Speed>5,'reject']=True # reject all floats with a speed above 5 km/hour
