@@ -1,6 +1,6 @@
 from mpl_toolkits.basemap import Basemap
 import matplotlib.pyplot as plt
-from transition_matrix_compute import argo_traj_data,load_sparse_csr,save_sparse_csr,find_nearest
+from transition_matrix_compute import argo_traj_data,load_sparse_csc,save_sparse_csc,find_nearest
 import numpy as np
 from scipy.interpolate import griddata
 import pandas as pd
@@ -9,6 +9,7 @@ from matplotlib.patches import Polygon
 from itertools import groupby
 import pickle
 import scipy
+import matplotlib.colors as colors
 
 """compiles and compares transition matrix from trajectory data. """
 
@@ -84,8 +85,7 @@ class Basemap(Basemap):
         return poly
 
 
-class argo_traj_data(argo_traj_data):
-
+class argo_traj_plot(argo_traj_data):
     def z_test(self,p_1,p_2,n_1,n_2):
         p_1 = np.ma.array(p_1,mask = (n_1==0))
         n_1 = np.ma.array(n_1,mask = (n_1==0))
@@ -96,7 +96,7 @@ class argo_traj_data(argo_traj_data):
 
     def transition_matrix_plot(self,filename,load_number_matrix=True):
         if load_number_matrix:
-            self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
+            self.number_matrix = load_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
         plt.figure(figsize=(10,10))
         k = np.diagonal(self.transition_matrix.todense())
         transition_plot = self.transition_vector_to_plottable(k)
@@ -144,7 +144,6 @@ class argo_traj_data(argo_traj_data):
                 plt.savefig('lynne_plot_'+str(n)+'_w_'+str(num))
                 plt.close()
 
-
     def transition_vector_to_plottable(self,vector):
         plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
         for n,tup in enumerate(self.total_list):
@@ -161,7 +160,7 @@ class argo_traj_data(argo_traj_data):
             ii_index = self.bins_lon.index(tup[1])
             qq_index = self.bins_lat.index(tup[0])
             plottable[qq_index,ii_index] = len(df_[(df_.bin_index==tup)])
-        return plottable        
+        return plottable
 
     def argo_dense_plot(self):
         ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
@@ -216,8 +215,8 @@ class argo_traj_data(argo_traj_data):
 
     def trans_number_matrix_plot(self,region='global'): 
         try:
-            self.number_matrix = load_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            self.standard_error = load_sparse_csr(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            self.number_matrix = load_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            self.standard_error = load_sparse_csc(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the number matrix could not be loaded'
             self.recompile_transition_matrix(dump=True)
@@ -227,16 +226,18 @@ class argo_traj_data(argo_traj_data):
         number_matrix_plot = self.transition_vector_to_plottable(k)
         plt.figure('number matrix',figsize=(10,10))
         # m.fillcontinents(color='coral',lake_color='aqua')
-        if region == 'global':
+
+        if self.traj_file_type == 'SOSE':
+            print 'I am plotting antarctic region'
+            m = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
+            plt.figure('standard error',figsize=(10,10))
+            m1 = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
+        else:
             print 'I am plotting global region'
             m = Basemap(projection='cyl',fix_aspect=False)
             plt.figure('standard error',figsize=(10,10))
             m1 = Basemap(projection='cyl',fix_aspect=False) #for the standard error plot
-        if region == 'antarctic':
-            print 'I am plotting antarctic region'
-            m = Basemap(projection='spstere',boundinglat=-25,lon_0=0,resolution='l')
-            plt.figure('standard error',figsize=(10,10))
-            m1 = Basemap(projection='spstere',boundinglat=-25,lon_0=0,resolution='l') #for the standard error plots
+        plt.figure('number matrix')
         m.drawcoastlines()
         XX,YY = m(self.X,self.Y)
         # number_matrix_plot[number_matrix_plot>1000]=1000
@@ -248,7 +249,7 @@ class argo_traj_data(argo_traj_data):
         plt.close()
         k = np.diagonal(self.standard_error.todense())
         standard_error_plot = self.transition_vector_to_plottable(k)
-        plt.figure(figsize=(10,10))
+        plt.figure('standard error')
         # m.fillcontinents(color='coral',lake_color='aqua')
         m1.drawcoastlines()
         XX,YY = m1(self.X,self.Y)
@@ -270,7 +271,6 @@ class argo_traj_data(argo_traj_data):
         plt.savefig(self.base_file+'deployment_number_data/profile_locations.png')
         plt.close()
 
-
     def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
         transition_matrix_plot = matrix_a-matrix_b
         transition_matrix_plot = np.ma.array(transition_matrix_plot,mask=(num_matrix_a==0)|(num_matrix_b==0)|np.isnan(transition_plot))
@@ -285,10 +285,10 @@ class argo_traj_data(argo_traj_data):
         This compares the transition matrices created by GPS and ARGOS tracked floats
         """
         try:
-            transition_matrix_argos = load_sparse_csr('./argos_gps_data/transition_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            number_matrix_argos = load_sparse_csr('./number_matrix_data/number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            transition_matrix_gps = load_sparse_csr('./argos_gps_data/transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            number_matrix_gps = load_sparse_csr('./number_matrix_data/number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            transition_matrix_argos = load_sparse_csc('./argos_gps_data/transition_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            number_matrix_argos = load_sparse_csc('./number_matrix_data/number_matrix_argos_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            transition_matrix_gps = load_sparse_csc('./argos_gps_data/transition_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            number_matrix_gps = load_sparse_csc('./number_matrix_data/number_matrix_gps_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the gps and argos transition matrices could not be loaded and will be recompiled'
             df = self.df_transition
@@ -313,18 +313,16 @@ class argo_traj_data(argo_traj_data):
         self.diagnose_matrix(transition_matrix_gps,'./dataset_difference/gps_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
         self.z_test(transition_matrix_gps.todense(),transition_matrix_argos.todense(),number_matrix_gps.todense(),number_matrix_argos.todense())
 
-
-
     def seasonal_compare(self):
         """
         This compares the transition matrices generated by NDJF and MJJA
         """
         print 'I am now comparing the seasonal nature of the dataset'
         try:
-            transition_matrix_summer = load_sparse_csr('./sum_wint_data/transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            number_matrix_summer = load_sparse_csr('./number_matrix_data/number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            transition_matrix_winter = load_sparse_csr('./sum_wint_data/transition_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            number_matrix_winter = load_sparse_csr('./number_matrix_data/number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            transition_matrix_summer = load_sparse_csc('./sum_wint_data/transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            number_matrix_summer = load_sparse_csc('./number_matrix_data/number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            transition_matrix_winter = load_sparse_csc('./sum_wint_data/transition_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+            number_matrix_winter = load_sparse_csc('./number_matrix_data/number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
         except IOError:
             print 'the summer and winter transition matrices could not be loaded and will be recompiled'
             df = self.df_transition
@@ -338,12 +336,10 @@ class argo_traj_data(argo_traj_data):
             self.recompile_transition_matrix(dump=False)
             transition_matrix_summer = self.transition_matrix
             number_matrix_summer = self.number_matrix
-
             save_sparse_csr('./sum_wint_data/transition_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_winter)
             save_sparse_csr('./number_matrix_data/number_matrix_winter_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_winter)
             save_sparse_csr('./sum_wint_data/transition_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',transition_matrix_summer)
             save_sparse_csr('./number_matrix_data/number_matrix_summer_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',number_matrix_summer)
-
         self.transition_matrix=transition_matrix_summer
         self.number_matrix=number_matrix_summer
         self.transition_matrix_plot('summer',load_number_matrix=False)
@@ -369,10 +365,8 @@ class argo_traj_data(argo_traj_data):
         assert self.df.Lon.max() <= 180
         assert self.df.Lat.max() <= 90
         assert self.df.Lat.min() >=-90
-
         try:
             self.df_transition = pd.read_pickle(self.base_file+'sose_transition_df_degree_bins_'+str(self.degree_bins)+'.pickle')
-
         except IOError: #this is the case that the file could not load
             print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
             self.recompile_transition_df(dump=False)
@@ -382,9 +376,8 @@ class argo_traj_data(argo_traj_data):
         while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]): #need to loop this
             self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
         self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
-
         try: # try to load the transition matrix
-            self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/sose_transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
+            self.transition_matrix = load_sparse_csc(self.base_file+'transition_matrix/sose_transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(date_span_limit)+'.npz')
         except IOError: # if the matrix cannot load, recompile
             print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
             self.recompile_transition_matrix(dump=False)
@@ -563,7 +556,6 @@ class argo_traj_data(argo_traj_data):
                 t.plot(x,y,'b*',markersize=14)
         return t,float_result.todense()
 
-
     def plot_latest_soccom_locations(self,debug = False,individual=False):
         plt.figure()
         t,float_result_sparse = self.get_latest_soccom_float_locations(plot=True,individual=individual)
@@ -643,7 +635,6 @@ class argo_traj_data(argo_traj_data):
         for n,(lat,lon) in enumerate(self.total_list):
             lon_index = x.tolist().index(find_nearest(x,lon))
             lat_index = y.tolist().index(find_nearest(y,lat))
-
             field_vector[n] = shifted_field[lat_index,lon_index]
         return field_vector
 
@@ -677,7 +668,6 @@ class argo_traj_data(argo_traj_data):
             plt.xlabel('Number of Additional Floats Deployed')
         plt.show()
 
-        
     def o2_var_plot(self,line=([20, -55], [-30, -15])):
         floor = 10**-11
         plt.figure()
@@ -762,7 +752,7 @@ class argo_traj_data(argo_traj_data):
 
     def load_corr_matrix(self,variable):
         try:
-            self.cor_matrix = load_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz')
+            self.cor_matrix = load_sparse_csc(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz')
         except IOError:
             np.load(variable+'_corr.npy')
             data_list = []
@@ -779,10 +769,71 @@ class argo_traj_data(argo_traj_data):
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
             save_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
 
-for token in [(2,3),(3,6),(1,1),(2,2),(3,3),(4,4)]:
+    def future_agregation_plot(self):
+        w = traj_class.transition_matrix
+        vector = np.ones((w.shape[0],1))
+        vector = vector/vector.sum()*100
+        for k in range(20):
+            months = 6*2**k
+            w = w.dot(w)
+            future_output = self.transition_vector_to_plottable((w.dot(scipy.sparse.csc_matrix(vector))).todense())
+            future_output = np.ma.masked_less(future_output,10**-2) 
+            plt.figure(figsize=(10,10))
+            m = Basemap(projection='cyl',fix_aspect=False)
+            # m.fillcontinents(color='coral',lake_color='aqua')
+            m.drawcoastlines()
+            XX,YY = m(self.X,self.Y)
+            m.pcolormesh(XX,YY,future_output,vmin=0,vmax=future_output.max())
+            plt.colorbar(label='% particles')
+            plt.title('Distribution after '+str(months)+' Months')
+            plt.show()
+
+    def eig_vec_plot(self,eig_vec):
+        eig_vec_token = self.transition_vector_to_plottable(eig_vec)
+        eig_vec_token = np.ma.masked_equal(eig_vec_token,0) 
+        if self.traj_file_type=='SOSE':
+            m = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
+        else:
+            m = Basemap(projection='cyl',fix_aspect=False)
+        m.drawcoastlines()
+        XX,YY = m(self.X,self.Y)
+        mag = abs(eig_vec_token).max()
+        m.pcolormesh(XX,YY,eig_vec_token,norm=colors.SymLogNorm(linthresh=0.000003, linscale=0.000003,
+                                              vmin=-mag/50, vmax=mag/50))
+
+    def eig_total_plot(self):
+        eig_vals,l_eig_vecs,r_eig_vecs = scipy.linalg.eig(self.transition_matrix.todense(),left=True)
+        idx = eig_vals.argsort()[::-1]
+        eig_vals = eig_vals[idx]
+        l_eig_vecs = l_eig_vecs[:,idx]
+        r_eig_vecs = r_eig_vecs[:,idx]
+
+        eig_vals = eig_vals[eig_vals>0.95]
+        for k,eig_val in enumerate(eig_vals):
+            print 'plotting eigenvector '+str(k)+' for '+str(self.degree_bins)
+            l_eig_vec = l_eig_vecs[:,k]
+            assert (l_eig_vec.T.dot(self.transition_matrix.todense())-eig_val*l_eig_vec).max()<10**-1
+            r_eig_vec = r_eig_vecs[:,k]
+            assert (self.transition_matrix.todense().dot(r_eig_vec)-eig_val*r_eig_vec).max()<10**-10
+
+            plt.figure(figsize=(10,10))
+            plt.subplot(2,2,1)
+            self.eig_vec_plot(l_eig_vec.real)
+            plt.title('left eig vec (real)')
+            plt.subplot(2,2,2)
+            self.eig_vec_plot(np.absolute(l_eig_vec))
+            plt.title('left eig vec (absolute)')
+            plt.subplot(2,2,3)
+            self.eig_vec_plot(r_eig_vec.real)
+            plt.title('right eig vec (real)')
+            plt.subplot(2,2,4)
+            self.eig_vec_plot(np.absolute(r_eig_vec))            
+            plt.title('right eig vec (absolute)')
+            plt.savefig(self.base_file+'plots/diag_degree_bins_'+str(self.degree_bins)+'/r_l_eig_vals_'+str(k)+'_time_step_'+str(self.date_span_limit)+'.png')
+            plt.close()
+
+for token in [(2,2),(2,3),(3,3)]:
     lat,lon = token
-    print lat
-    print lon
-    for date in [20,40,60,80,100,120,140,160,180]:
-        traj_class = argo_traj_data(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date,traj_file_type='SOSE')
-        traj_class.trans_number_matrix_plot(region='antarctic')
+    for date in [180]:
+        traj_class = argo_traj_plot(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date)
+        traj_class.trans_number_matrix_plot()

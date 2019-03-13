@@ -65,6 +65,25 @@ except IOError:
 	np.save('subsampled_pco2',pco2)
 
 
+def recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list):
+	np.save(file_name_,np.zeros([1]))
+	base_timeseries = matrix_[:,n]
+	array = np.zeros([49,49])
+
+	for i,lon in enumerate(lon_index_list):
+		lon_mask = (lon_list==lon)
+		for j,lat in enumerate(lat_index_list):
+			lat_mask = (lat_list==lat)
+			mask = lat_mask&lon_mask
+			if ~mask.any():
+				continue
+			token_timeseries = matrix_[:,mask.tolist().index(True)]
+			cor = np.corrcoef(base_timeseries,token_timeseries)[0,1]
+			array[i,j]=cor	
+	np.save(file_name_,array)
+	return array
+
+
 def correlation_calc(matrix_,name_,plot=False):
 	array_list = []
 	len_= len(lat_list)
@@ -94,20 +113,11 @@ def correlation_calc(matrix_,name_,plot=False):
 			array = np.load(file_name_)
 		except IOError:
 			print 'the array was not found, we are recompiling'
-			base_timeseries = matrix_[:,n]
-			array = np.zeros([49,49])
-
-			for i,lon in enumerate(lon_index_list):
-				lon_mask = (lon_list==lon)
-				for j,lat in enumerate(lat_index_list):
-					lat_mask = (lat_list==lat)
-					mask = lat_mask&lon_mask
-					if ~mask.any():
-						continue
-					token_timeseries = matrix_[:,mask.tolist().index(True)]
-					cor = np.corrcoef(base_timeseries,token_timeseries)[0,1]
-					array[i,j]=cor	
-			np.save(file_name_,array)
+			array = recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list)
+		if array.shape!=(49,49):
+			array - recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list)
+		assert array.shape==(49,49)
+		assert ~(array==0).all()
 		array_list.append(array)
 		end = time.time()
 		print 'subroutine took ',end-start
@@ -119,11 +129,10 @@ def correlation_calc(matrix_,name_,plot=False):
 			plt.title('Correlation at '+str(base_lat)+' Lat, '+str(base_lon)+' Lon')
 			plt.colorbar()
 			plt.savefig(file_name_[:-4]+'.png')
-
 			plt.close()
-	return np.vstack(array_list)
+	return np.stack(array_list,axis=0)
 
-dummy_array_list= correlation_calc(pco2,'pco2',plot=True)
+dummy_array= correlation_calc(pco2,'pco2')
 np.save('pco2_corr',dummy_array)
-dummy_array= correlation_calc(o2,'o2',plot=True)
+dummy_array= correlation_calc(o2,'o2')
 np.save('o2_corr',dummy_array)

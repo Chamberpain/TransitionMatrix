@@ -14,27 +14,28 @@ import math
 def find_nearest(items, pivot):
 	return min(items, key=lambda x: abs(x - pivot))
 
-def save_sparse_csr(filename, array):
+def save_sparse_csc(filename, array):
     np.savez(filename, data=array.data, indices=array.indices,
              indptr=array.indptr, shape=array.shape)
 
-def load_sparse_csr(filename):
+def load_sparse_csc(filename):
     loader = np.load(filename)
-    return scipy.sparse.csr_matrix((loader['data'], loader['indices'], loader['indptr']),
-                      shape=loader['shape']).T #this transpose is very important because otherwise these transition matrices load wrong and send flow the wrong way.
+    return scipy.sparse.csc_matrix((loader['data'], loader['indices'], loader['indptr']),
+                      shape=loader['shape'])
 
 __file__ = os.getenv("HOME")+'/Projects/transition_matrix/transition_matrix_compute.py' #this is a hack to get this thing to run in terminal
 
 class argo_traj_data:
 	def __init__(self,degree_bin_lat=2,degree_bin_lon=2,date_span_limit=60,traj_file_type='Argo'):
-		if traj_file_type=='Argo':
+		self.traj_file_type = traj_file_type
+		if self.traj_file_type=='Argo':
 			self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/'	#this is a total hack to easily change the code to run sose particles
-		elif traj_file_type=='SOSE':
+		elif self.traj_file_type=='SOSE':
 			self.base_file = os.getenv("HOME")+'/iCloud/Data/Processed/transition_matrix/sose/'
 			print 'I am loading SOSE data'
 
 		print 'I have started argo traj data'
-		self.degree_bins = (int(degree_bin_lat),int(degree_bin_lon))
+		self.degree_bins = (degree_bin_lat,degree_bin_lon)
 		self.date_span_limit = date_span_limit
 		self.bins_lat = np.arange(-90,90.1,self.degree_bins[0]).tolist()
 		self.bins_lon = np.arange(-180,180.1,self.degree_bins[1]).tolist()
@@ -43,6 +44,8 @@ class argo_traj_data:
 			raise
 		self.X,self.Y = np.meshgrid(self.bins_lon,self.bins_lat)
 		self.df = pd.read_pickle(self.base_file+'all_argo_traj.pickle').sort_values(by=['Cruise','Date'])
+		if traj_file_type=='SOSE':
+			self.df=self.df[self.df.Lat<-36] # this cuts off floats that wander north of 35
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
 		self.df['bin_index'] = zip(self.df['bins_lat'].values,self.df['bins_lon'].values)
@@ -55,26 +58,35 @@ class argo_traj_data:
 		assert self.df.Lat.min() >=-90
 		print 'Displacement dataframe passed necessary tests'
 		try:
-			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'.pickle')
+			self.df_transition = pd.read_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'_modified.pickle')
 		except IOError: #this is the case that the file could not load
 			print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
+			print 'file was '+self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'_modified.pickle'
 			self.recompile_transition_df()
+		assert ~np.isnan(self.df_transition['start bin'].unique().tolist()).any()
 		self.end_bin_string = 'end bin '+str(self.date_span_limit)+' day' # we compute the transition df for many different date spans, here is where we find that column
 		self.df_transition = self.df_transition.dropna(subset=[self.end_bin_string])
 		print 'Transition dataframe passed all necessary tests'
 		while len(self.df_transition)!=len(self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]):	#need to loop this
 			print 'Removing end bin strings that do not have a start bin string associated'
 			self.df_transition = self.df_transition[self.df_transition[self.end_bin_string].isin(self.df_transition['start bin'].unique())]
-		self.total_list = [list(x) for x in self.df_transition['start bin'].unique()] 
-
+		self.total_list,self.df_transition = self.total_list_calculator(self.df_transition)
 		try: # try to load the transition matrix 
-			self.transition_matrix = load_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
+			self.transition_matrix = load_sparse_csc(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
 		except IOError: # if the matrix cannot load, recompile
 			print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,' and time step ',self.date_span_limit
 			self.recompile_transition_matrix()
 		assert (np.abs(self.transition_matrix.sum(axis=0)-1)<10**-10).all()
 		assert (self.transition_matrix>0).data.all() 
+		assert len(self.total_list)==self.transition_matrix.shape[0]
 		print 'Transition matrix passed all necessary tests. Initial load complete'
+
+	def total_list_calculator(self,df):
+		token = df[df['start bin']!=df[self.end_bin_string]].drop_duplicates().groupby('start bin').count() 
+		total_list = [list(x) for x in token[token[self.end_bin_string]>0].index.unique().values.tolist()] # this will make a unique "total list" for every transition matrix, but is necessary so that we dont get "holes" in the transition matrix
+		token = [tuple(x) for x in total_list]
+		df = df[df[self.end_bin_string].isin(token)&df['start bin'].isin(token)]
+		return (total_list,df)
 
 	def recompile_transition_df(self,dump=True):
 		"""
@@ -139,9 +151,49 @@ class argo_traj_data:
 		df_dict['end bin'] = final_bin_list
 		self.df_transition = pd.DataFrame(df_dict)
 		if dump:
-			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'.pickle')
+			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'_raw.pickle')
+			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'_modified.pickle')
 
-	def recompile_transition_matrix(self,dump=True):
+	def column_compute(self,ii):
+
+#this algorithm has problems with low data density because the frame does not drop na values for the self.end_bin_string
+		token_row_list = []
+		token_column_list = []
+		token_num_list = []
+		token_num_test_list = []
+		token_data_list = []
+
+		ii_index = self.total_list.index(list(ii))
+		frame = self.df_transition[self.df_transition['start bin']==ii]	# data from of floats that start in looped grid cell
+		frame_cut = frame[frame[self.end_bin_string]!=ii].dropna(subset=[self.end_bin_string]) #this is all floats that go out of the looped grid cell
+		if frame_cut.empty:
+			print 'the frame cut was empty'
+			return (token_num_list, token_data_list, token_row_list,token_column_list)
+		token_row_list = []
+		token_column_list = []
+		token_num_list = []
+		token_num_test_list = []
+		token_data_list = []
+		token_row_list.append(ii_index)	#compute the on diagonal elements
+		token_column_list.append(ii_index)	#compute the on diagonal elemnts
+		data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
+		token_num_list.append(len(frame)-len(frame_cut)) # this is where we save the data density of every cell
+		token_data_list.append(data)
+		for qq in frame_cut[self.end_bin_string].unique():
+			qq_index = self.total_list.index(list(qq))
+			token_row_list.append(qq_index)	#these will be the off diagonal elements
+			token_column_list.append(ii_index)
+			data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
+			token_data_list.append(data)
+			token_num_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq])) # this is where we save the data density of every cell
+		assert abs(sum(token_data_list)-1)<0.01	#ensure that all columns scale to 1
+		assert ~np.isnan(token_data_list).any()
+		assert (np.array(token_data_list)<=1).all()
+		assert (np.array(token_data_list)>=0).all()
+		assert sum(token_num_list)==len(frame)
+		return (token_num_list, token_data_list, token_row_list,token_column_list)
+
+	def recompile_transition_matrix(self,dump=True,plot=False):
 		"""
 		Recompiles transition matrix from df_transition based on set timestep
 		"""
@@ -150,50 +202,88 @@ class argo_traj_data:
 		row_list = []
 		column_list = []
 
-		k = len(self.df_transition['start bin'].unique())
-		for n,ii in enumerate(self.df_transition['start bin'].unique()):
+		k = len(self.total_list)
+		for n,index in enumerate(self.total_list):
 			print 'made it through ',n,' bins. ',(k-n),' remaining'
-			ii_index = self.total_list.index(list(ii))
-			frame = self.df_transition[self.df_transition['start bin']==ii]	# data from of floats that start in looped grid cell
-			frame_cut = frame[frame[self.end_bin_string]!=ii].dropna(subset=[self.end_bin_string]) #this is all floats that go out of the looped grid cell
-			# if not frame_cut.empty:
-			# 	print 'the frame cut was not empty'
-			test_list = []	#this is to confirm that the columns sum to 1
-			num_test_list = []
-			row_list.append(ii_index)	#compute the on diagonal elements
-			column_list.append(ii_index)	#compute the on diagonal elemnts
-			data = (len(frame)-len(frame_cut))/float(len(frame)) # this is the percentage of floats that stay in the looped grid cell
-			num_list.append(len(frame)-len(frame_cut)) # this is where we save the data density of every cell
-			num_test_list.append(len(frame)-len(frame_cut))
-			data_list.append(data)
-			test_list.append(data)
-			for qq in frame_cut[self.end_bin_string].unique():
-				qq_index = self.total_list.index(list(qq))
-				row_list.append(qq_index)	#these will be the off diagonal elements
-				column_list.append(ii_index)
-				data = (len(frame_cut[frame_cut[self.end_bin_string]==qq]))/float(len(frame))
-				data_list.append(data)
-				num_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq])) # this is where we save the data density of every cell
-				num_test_list.append(len(frame_cut[frame_cut[self.end_bin_string]==qq]))
-				test_list.append(data)
-
-			assert abs(sum(test_list)-1)<0.01	#ensure that all columns scale to 1
-			assert ~np.isnan(data_list).any()
-			assert (np.array(data_list)<=1).all()
-			assert (np.array(data_list)>=0).all()
-			assert sum(num_test_list)==len(frame)
-		assert sum(num_list)==len(self.df_transition)
+			dummy_num_list, dummy_data_list,dummy_row_list,dummy_column_list = self.column_compute(tuple(index))
+			num_list += dummy_num_list
+			data_list += dummy_data_list
+			row_list += dummy_row_list
+			column_list += dummy_column_list
+		assert sum(num_list)==len(self.df_transition[self.df_transition['start bin'].isin([tuple(self.total_list[x]) for x in column_list])])
 		self.transition_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
-		# self.transition_matrix = self.add_noise(self.transition_matrix)
-		sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		self.number_matrix = scipy.sparse.csc_matrix((num_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
+
+		# self.transition_matrix = self.add_noise(self.transition_matrix)
+
+		full_matrix_list = range(self.transition_matrix.shape[0])
+		eig_vals,eig_vecs = scipy.linalg.eig(self.transition_matrix.todense())
+		orig_len = len(self.transition_matrix.todense())
+		idx = np.where((eig_vecs>0).sum(axis=0)<=2)
+		index_list = []
+		for index in idx[0]:
+			eig_vec = eig_vecs[:,index]		
+			index_list+=np.where(eig_vec>0)[0].tolist()
+		index_list = np.unique(index_list)		
+		if index_list.tolist():
+			not_in_index_list = np.array(full_matrix_list)[~np.isin(full_matrix_list,index_list)]
+
+			row_list = self.transition_matrix.tocoo().row.tolist()
+			column_list = self.transition_matrix.tocoo().col.tolist()
+			data_list = self.transition_matrix.tocoo().data.tolist()
+			number_list = self.number_matrix.tocoo().data.tolist()
+
+			row_truth = np.isin(row_list,not_in_index_list)
+			column_truth = np.isin(column_list,not_in_index_list)
+			mask = row_truth&column_truth
+
+			row_list = np.array(row_list)[mask].tolist()
+			column_list = np.array(column_list)[mask].tolist()
+			data_list = np.array(data_list)[mask].tolist()
+			number_list = np.array(number_list)[mask].tolist()
+
+			if plot:
+				disfunction_df = self.df_transition[self.df_transition[self.end_bin_string].isin([tuple(x) for x in np.array(self.total_list)[index_list]])]
+				for index in index_list:
+					for FLOAT in disfunction_df[disfunction_df[self.end_bin_string]==tuple(self.total_list[index])].Cruise.unique()[2:5]:
+						token = self.df[self.df.Cruise==FLOAT]
+						plt.plot(token.Lat.tolist(),token.Lon.tolist())
+						lat,lon = self.total_list[index]
+						plt.plot(lat,lon,'r*',markersize=15)
+						plt.show()
+
+			self.df_transition.loc[self.df_transition[self.end_bin_string].isin([tuple(x) for x in np.array(self.total_list)[index_list]]),self.end_bin_string]=np.nan
+			self.df_transition.to_pickle(self.base_file+'transition_df_degree_bins_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'_modified.pickle')
+			new_total_list,self.df_transition = self.total_list_calculator(self.df_transition)
+			dummy, column_redo = np.where(self.transition_matrix[index_list,:].todense()!=0)
+			column_redo = np.unique(column_redo)
+			column_redo = column_redo[~np.isin(column_redo,index_list)]
+
+			k = len(column_redo)
+			for n,index in enumerate(column_redo):
+				if n%10==0:
+					print 'made it through ',n,' bins. ',(k-n),' remaining'
+				dummy_num_list, dummy_data_list,dummy_row_list,dummy_column_list = self.column_compute(tuple(self.total_list[index]))
+				data_list += dummy_data_list
+				row_list += dummy_row_list
+				column_list += dummy_column_list
+				number_list += dummy_num_list
+
+			new_col_list = [new_total_list.index(self.total_list[x]) for x in column_list]
+			new_row_list = [new_total_list.index(self.total_list[x]) for x in row_list]
+			
+			self.transition_matrix = scipy.sparse.csc_matrix((data_list,(new_row_list,new_col_list)),shape=(len(self.total_list),len(self.total_list)))
+			self.number_matrix = scipy.sparse.csc_matrix((num_list,(new_row_list,new_col_list)),shape=(len(self.total_list),len(self.total_list)))
+
+
+		sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
 		self.standard_error = np.sqrt(self.transition_matrix*(sparse_ones-self.transition_matrix)/self.number_matrix)
 		self.standard_error = scipy.sparse.csc_matrix(self.standard_error)
 		if dump:
 			assert (np.abs(self.transition_matrix.todense().sum(axis=0)-1)<0.01).all() #this is in the dump subroutine for the case that it is recompiled for the data withholding experiment.
-			save_sparse_csr(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
-			save_sparse_csr(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
-			save_sparse_csr(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.standard_error)
+			save_sparse_csc(self.base_file+'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.transition_matrix)
+			save_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.number_matrix)
+			save_sparse_csc(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz',self.standard_error)
  
 	def add_noise(self,matrix,noise=0.05):
 		"""
@@ -227,7 +317,7 @@ class argo_traj_data:
 		"""
 		print 'in w matrix, current number is ',number
 		try:
-			self.w = load_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
+			self.w = load_sparse_csc(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz')
 			assert self.transition_matrix.shape==self.w.shape
  			assert ~np.isnan(self.w).any()
 			assert (np.array(self.w)<=1).all()
@@ -247,4 +337,4 @@ class argo_traj_data:
 			assert (np.array(self.w)>=0).all()
 			assert (self.w.todense().sum(axis=0)-1<0.01).all()
 			if dump:
-				save_sparse_csr(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
+				save_sparse_csc(self.base_file+'/w_matrix_data/w_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'_number_'+str(number)+'.npz',self.w)	#and save
