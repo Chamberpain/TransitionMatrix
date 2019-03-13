@@ -388,27 +388,25 @@ class argo_traj_plot(argo_traj_data):
         This creates a matrix that shows the number of grid cells north and south, east and west.
         """
         lat_list, lon_list = zip(*self.total_list)
-        pos_max = 180/self.degree_bins #this is the maximum number of bins possible
+        pos_max = 180/self.degree_bins[1] #this is the maximum number of bins possible
         output_list = []
-        for position_list in [lat_list,lon_list]:
+        for n,position_list in enumerate([lat_list,lon_list]):
             token_array = np.zeros([len(position_list),len(position_list)])
             for token in np.unique(position_list):
                 print token
                 index_list = np.where(np.array(position_list)==token)[0]
-
-                token_list = (np.array(position_list)-token)/self.degree_bins #the relative number of degree bins
+                token_list = (np.array(position_list)-token)/self.degree_bins[n] #the relative number of degree bins
                 token_list[token_list>pos_max]=token_list[token_list>pos_max]-2*pos_max #the equivalent of saying -360 degrees
                 token_list[token_list<-pos_max]=token_list[token_list<-pos_max]+2*pos_max #the equivalent of saying +360 degrees
-
                 token_array[:,index_list]=np.array([token_list.tolist(),]*len(index_list)).transpose() 
             output_list.append(token_array)
         north_south,east_west = output_list
         self.east_west = east_west
         self.north_south = north_south  #this is because np.array makes lists of lists go the wrong way
-        assert (self.east_west<=180/self.degree_bins).all()
-        assert (self.east_west>=-180/self.degree_bins).all()
-        assert (self.north_south>=-180/self.degree_bins).all()
-        assert (self.north_south<=180/self.degree_bins).all()
+        assert (self.east_west<=180/self.degree_bins[1]).all()
+        assert (self.east_west>=-180/self.degree_bins[1]).all()
+        assert (self.north_south>=-180/self.degree_bins[0]).all()
+        assert (self.north_south<=180/self.degree_bins[0]).all()
 
     def quiver_plot(self,matrix,arrows=True,degree_sep=4,scale_factor=20):
         """
@@ -723,9 +721,9 @@ class argo_traj_plot(argo_traj_data):
             index_list = [self.total_list.index([lat,lon])]
             data_list = [1]
             return (data_list,index_list)
-        lat_list = np.arange(float(lat),float(lat)-12,(-1*self.degree_bins))[::-1].tolist()+np.arange(float(lat),float(lat)+12,self.degree_bins)[1:].tolist()
+        lat_list = np.arange(float(lat),float(lat)-12,(-1*self.degree_bins[0]))[::-1].tolist()+np.arange(float(lat),float(lat)+12,self.degree_bins[0])[1:].tolist()
         column_index_list = np.arange(lat-12,lat+12,0.5).tolist()
-        lon_list = np.arange(float(lon),float(lon)-12,(-1*self.degree_bins))[::-1].tolist()+np.arange(float(lon),float(lon)+12,self.degree_bins)[1:].tolist()
+        lon_list = np.arange(float(lon),float(lon)-12,(-1*self.degree_bins[1]))[::-1].tolist()+np.arange(float(lon),float(lon)+12,self.degree_bins[1])[1:].tolist()
         row_index_list = np.arange(lon-12,lon+12,0.5).tolist()
         data_list = []
         index_list = []
@@ -767,7 +765,14 @@ class argo_traj_plot(argo_traj_data):
                 column_list += [n]*len(row_list_token)
                 data_list += data_list_token            
             self.cor_matrix = scipy.sparse.csc_matrix((data_list,(row_list,column_list)),shape=(len(self.total_list),len(self.total_list)))
-            save_sparse_csr(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
+            save_sparse_csc(self.base_file+variable+'_cor_matrix_degree_bins_'+str(self.degree_bins)+'.npz', self.cor_matrix)
+
+    def plot_cm26_cor_ellipse(self,variable):
+        """plots the correlation ellipse of the cm2.6 variable"""
+        self.get_direction_matrix()
+        self.load_corr_matrix(variable)
+        self.quiver_plot(self.cor_matrix, arrows=False,scale_factor = 0.1)
+        plt.show()
 
     def future_agregation_plot(self):
         w = traj_class.transition_matrix
@@ -836,4 +841,4 @@ for token in [(2,2),(2,3),(3,3)]:
     lat,lon = token
     for date in [180]:
         traj_class = argo_traj_plot(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date)
-        traj_class.trans_number_matrix_plot()
+        traj_class.plot_cm26_cor_ellipse('o2')
