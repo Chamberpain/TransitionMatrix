@@ -115,7 +115,7 @@ def correlation_calc(matrix_,name_,plot=False):
 			print 'the array was not found, we are recompiling'
 			array = recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list)
 		if array.shape!=(49,49):
-			array - recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list)
+			array = recompile_array(file_name_,matrix_,n,lon_index_list,lat_index_list)
 		assert array.shape==(49,49)
 		assert ~(array==0).all()
 		array_list.append(array)
@@ -132,7 +132,7 @@ def correlation_calc(matrix_,name_,plot=False):
 			plt.close()
 	return np.stack(array_list,axis=0)
 
-dummy_array= correlation_calc(pco2,'pco2')
-np.save('pco2_corr',dummy_array)
+# dummy_array= correlation_calc(pco2,'pco2')
+# np.save('pco2_corr',dummy_array)
 dummy_array= correlation_calc(o2,'o2')
 np.save('o2_corr',dummy_array)
