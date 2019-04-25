@@ -13,79 +13,12 @@ import matplotlib.colors as colors
 
 """compiles and compares transition matrix from trajectory data. """
 
-class Basemap(Basemap):
-    def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
-        """
-        Draws a polygon centered at ``x0, y0``. The polygon approximates an
-        ellipse on the surface of the Earth with semi-major-axis ``a`` and 
-        semi-minor axis ``b`` degrees longitude and latitude, made up of 
-        ``n`` vertices.
 
-        For a description of the properties of ellipsis, please refer to [1].
-
-        The polygon is based upon code written do plot Tissot's indicatrix
-        found on the matplotlib mailing list at [2].
-
-        Extra keyword ``ax`` can be used to override the default axis instance.
-
-        Other \**kwargs passed on to matplotlib.patches.Polygon
-
-        RETURNS
-            poly : a maptplotlib.patches.Polygon object.
-
-        REFERENCES
-            [1] : http://en.wikipedia.org/wiki/Ellipse
-
-
-        """
-        ax = kwargs.pop('ax', None) or self._check_ax()
-        g = pyproj.Geod(a=self.rmajor, b=self.rminor)
-        # Gets forward and back azimuths, plus distances between initial
-        # points (x0, y0)
-        azf, azb, dist = g.inv([x0, x0], [y0, y0], [x0+a, x0], [y0, y0+b])
-        tsid = dist[0] * dist[1] # a * b
-
-        # Initializes list of segments, calculates \del azimuth, and goes on 
-        # for every vertex
-        seg = []
-        AZ = np.linspace(azf[0], 360. + azf[0], n)
-        for i, az in enumerate(AZ):
-            # Skips segments along equator (Geod can't handle equatorial arcs).
-            if np.allclose(0., y0) and (np.allclose(90., az) or
-                np.allclose(270., az)):
-                continue
-
-            # In polar coordinates, with the origin at the center of the 
-            # ellipse and with the angular coordinate ``az`` measured from the
-            # major axis, the ellipse's equation  is [1]:
-            #
-            #                           a * b
-            # r(az) = ------------------------------------------
-            #         ((b * cos(az))**2 + (a * sin(az))**2)**0.5
-            #
-            # Azymuth angle in radial coordinates and corrected for reference
-            # angle.
-            azr = 2. * np.pi / 360. * (phi+az + 90.)
-            A = dist[0] * np.sin(azr)
-            B = dist[1] * np.cos(azr)
-            r = tsid / (B**2. + A**2.)**0.5
-            lon, lat, azb = g.fwd(x0, y0, az, r)
-            x, y = self(lon, lat)
-
-            # Add segment if it is in the map projection region.
-            if x < 1e20 and y < 1e20:
-                seg.append((x, y))
-        # print seg
-        poly = Polygon(seg, **kwargs)
-        ax.add_patch(poly)
-
-        # Set axes limits to fit map region.
-        self.set_axes_limits(ax=ax)
-
-        return poly
 
 
 class argo_traj_plot(argo_traj_data):
+    
+
     def z_test(self,p_1,p_2,n_1,n_2):
         p_1 = np.ma.array(p_1,mask = (n_1==0))
         n_1 = np.ma.array(n_1,mask = (n_1==0))
@@ -94,23 +27,6 @@ class argo_traj_plot(argo_traj_data):
         z_stat = (p_1-p_2)/np.sqrt(self.transition_matrix.todense()*(1-self.transition_matrix.todense())*(1/n_1+1/n_2))
         assert (np.abs(z_stat)<1.96).data.all()
 
-    def transition_matrix_plot(self,filename,load_number_matrix=True):
-        if load_number_matrix:
-            self.number_matrix = load_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')            
-        plt.figure(figsize=(10,10))
-        k = np.diagonal(self.transition_matrix.todense())
-        transition_plot = self.transition_vector_to_plottable(k)
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        XX,YY = m(self.X,self.Y)
-        transition_plot = np.ma.array((1-transition_plot),mask=self.transition_vector_to_plottable(self.number_matrix==0))
-        m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=1) # this is a plot for the tendancy of the residence time at a grid cell
-        plt.colorbar(label='% particles dispersed')
-        plt.title('1 - diagonal of transition matrix',size=30)
-        plt.savefig(self.base_file+'transition_plots/'+filename+'_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        plt.close()
-        self.diagnose_matrix(self.transition_matrix,self.base_file+'/transition_plots/'+filename+'_diagnose_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
 
     def california_plot_for_lynne(self):
         locs = pd.read_excel('../california_current_float_projection/ca_current_test_locations_2018-05-14.xlsx')
@@ -144,132 +60,8 @@ class argo_traj_plot(argo_traj_data):
                 plt.savefig('lynne_plot_'+str(n)+'_w_'+str(num))
                 plt.close()
 
-    def transition_vector_to_plottable(self,vector):
-        plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
-        for n,tup in enumerate(self.total_list):
-            ii_index = self.bins_lon.index(tup[1])
-            qq_index = self.bins_lat.index(tup[0])
-            plottable[qq_index,ii_index] = vector[n]
-        return plottable
 
-    def df_to_plottable(self,df_):
-        plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
-        k = len(df_.bin_index.unique())
-        for n,tup in enumerate(df_.bin_index.unique()):
-            print k-n, 'bins remaining'
-            ii_index = self.bins_lon.index(tup[1])
-            qq_index = self.bins_lat.index(tup[0])
-            plottable[qq_index,ii_index] = len(df_[(df_.bin_index==tup)])
-        return plottable
 
-    def argo_dense_plot(self):
-        ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
-        series = self.df.groupby('bin_index').count()['Cruise']
-        for item in series.iteritems():
-            tup,n = item
-            ii_index = self.bins_lon.index(tup[1])
-            qq_index = self.bins_lat.index(tup[0])
-            ZZ[qq_index,ii_index] = n           
-        plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        XX,YY = m(self.X,self.Y)
-        ZZ = np.ma.masked_equal(ZZ,0)
-        m.pcolormesh(XX,YY,ZZ,vmin=0,cmap=plt.cm.magma)
-        plt.title('Profile Density',size=30)
-        plt.colorbar(label='Number of float profiles')
-        print 'I am saving argo dense figure'
-        plt.savefig(self.base_file+'argo_dense_data/number_matrix_degree_bins_'+str(self.degree_bins)+'.png')
-        plt.close()
-
-    def dep_number_plot(self):
-        ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
-        series = self.df.drop_duplicates(subset=['Cruise'],keep='first').groupby('bin_index').count()['Cruise']
-        for item in series.iteritems():
-            tup,n = item
-            ii_index = self.bins_lon.index(tup[1])
-            qq_index = self.bins_lat.index(tup[0])
-            ZZ[qq_index,ii_index] = n  
-        plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        XX,YY = m(self.X,self.Y)
-        ZZ = np.ma.masked_equal(ZZ,0)
-        m.pcolormesh(XX,YY,ZZ,vmin=0,vmax=30,cmap=plt.cm.magma)
-        plt.title('Deployment Density',size=30)
-        plt.colorbar(label='Number of floats deployed')
-        plt.savefig(self.base_file+'deployment_number_data/number_matrix_degree_bins_'+str(self.degree_bins)+'.png')
-        plt.close()
-
-        plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        series = self.df.drop_duplicates(subset=['Cruise'],keep='first')
-        m.scatter(series.Lon.values,series.Lat.values,s=0.2)
-        plt.title('Deployment Locations',size=30)
-        plt.savefig(self.base_file+'deployment_number_data/deployment_locations.png')
-        plt.close()
-
-    def trans_number_matrix_plot(self,region='global'): 
-        try:
-            self.number_matrix = load_sparse_csc(self.base_file+'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-            self.standard_error = load_sparse_csc(self.base_file+'transition_matrix/standard_error_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.npz')
-        except IOError:
-            print 'the number matrix could not be loaded'
-            self.recompile_transition_matrix(dump=True)
-        k = self.number_matrix.sum(axis=0)
-        k = k.T
-        print k
-        number_matrix_plot = self.transition_vector_to_plottable(k)
-        plt.figure('number matrix',figsize=(10,10))
-        # m.fillcontinents(color='coral',lake_color='aqua')
-
-        if self.traj_file_type == 'SOSE':
-            print 'I am plotting antarctic region'
-            m = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
-            plt.figure('standard error',figsize=(10,10))
-            m1 = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
-        else:
-            print 'I am plotting global region'
-            m = Basemap(projection='cyl',fix_aspect=False)
-            plt.figure('standard error',figsize=(10,10))
-            m1 = Basemap(projection='cyl',fix_aspect=False) #for the standard error plot
-        plt.figure('number matrix')
-        m.drawcoastlines()
-        XX,YY = m(self.X,self.Y)
-        # number_matrix_plot[number_matrix_plot>1000]=1000
-        number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
-        m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
-        plt.title('Transition Density',size=30)
-        plt.colorbar(label='Number of float transitions')
-        plt.savefig(self.base_file+'/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        plt.close()
-        k = np.diagonal(self.standard_error.todense())
-        standard_error_plot = self.transition_vector_to_plottable(k)
-        plt.figure('standard error')
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m1.drawcoastlines()
-        XX,YY = m1(self.X,self.Y)
-        # number_matrix_plot[number_matrix_plot>1000]=1000
-        standard_error_plot = np.ma.masked_equal(standard_error_plot,0)
-        m1.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
-        plt.title('Standard Error',size=30)
-        plt.colorbar(label='Standard Error')
-        plt.savefig(self.base_file+'/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        plt.close()
-
-    def deployment_locations(self):
-        plt.figure(figsize=(10,10))
-        m = Basemap(projection='cyl',fix_aspect=False)
-        # m.fillcontinents(color='coral',lake_color='aqua')
-        m.drawcoastlines()
-        m.scatter(self.df.Lon.values,self.df.Lat.values,s=0.2)
-        plt.title('Float Profiles',size=30)
-        plt.savefig(self.base_file+'deployment_number_data/profile_locations.png')
-        plt.close()
 
     def matrix_compare(self,matrix_a,matrix_b,num_matrix_a,num_matrix_b,title,save_name): #this function accepts sparse matrices
         transition_matrix_plot = matrix_a-matrix_b
@@ -383,30 +175,7 @@ class argo_traj_plot(argo_traj_data):
             self.recompile_transition_matrix(dump=False)
             save_sparse_csr(self.base_file+'transition_matrix/sose_transition_matrix_degree_bins_'+str(degree_bins)+'_time_step_'+str(date_span_limit)+'.npz',self.transition_matrix)
 
-    def get_direction_matrix(self):
-        """
-        This creates a matrix that shows the number of grid cells north and south, east and west.
-        """
-        lat_list, lon_list = zip(*self.total_list)
-        pos_max = 180/self.degree_bins[1] #this is the maximum number of bins possible
-        output_list = []
-        for n,position_list in enumerate([lat_list,lon_list]):
-            token_array = np.zeros([len(position_list),len(position_list)])
-            for token in np.unique(position_list):
-                print token
-                index_list = np.where(np.array(position_list)==token)[0]
-                token_list = (np.array(position_list)-token)/self.degree_bins[n] #the relative number of degree bins
-                token_list[token_list>pos_max]=token_list[token_list>pos_max]-2*pos_max #the equivalent of saying -360 degrees
-                token_list[token_list<-pos_max]=token_list[token_list<-pos_max]+2*pos_max #the equivalent of saying +360 degrees
-                token_array[:,index_list]=np.array([token_list.tolist(),]*len(index_list)).transpose() 
-            output_list.append(token_array)
-        north_south,east_west = output_list
-        self.east_west = east_west
-        self.north_south = north_south  #this is because np.array makes lists of lists go the wrong way
-        assert (self.east_west<=180/self.degree_bins[1]).all()
-        assert (self.east_west>=-180/self.degree_bins[1]).all()
-        assert (self.north_south>=-180/self.degree_bins[0]).all()
-        assert (self.north_south<=180/self.degree_bins[0]).all()
+
 
     def quiver_plot(self,matrix,arrows=True,degree_sep=4,scale_factor=20):
         """
@@ -806,39 +575,42 @@ class argo_traj_plot(argo_traj_data):
         m.pcolormesh(XX,YY,eig_vec_token,norm=colors.SymLogNorm(linthresh=0.000003, linscale=0.000003,
                                               vmin=-mag/50, vmax=mag/50))
 
-    def eig_total_plot(self):
-        eig_vals,l_eig_vecs,r_eig_vecs = scipy.linalg.eig(self.transition_matrix.todense(),left=True)
+    def eig_total_plot(self,matrix,label=''):
+        eig_vals,l_eig_vecs,r_eig_vecs = scipy.linalg.eig(matrix.todense(),left=True)
         idx = eig_vals.argsort()[::-1]
         eig_vals = eig_vals[idx]
         l_eig_vecs = l_eig_vecs[:,idx]
         r_eig_vecs = r_eig_vecs[:,idx]
 
-        eig_vals = eig_vals[eig_vals>0.95]
+        eig_vals = eig_vals[eig_vals>0.97]
         for k,eig_val in enumerate(eig_vals):
-            print 'plotting eigenvector '+str(k)+' for '+str(self.degree_bins)
+            print 'plotting eigenvector '+str(k)+' for '+str(self.degree_bins)+' eigenvalue is '+str(eig_val)
             l_eig_vec = l_eig_vecs[:,k]
             assert (l_eig_vec.T.dot(self.transition_matrix.todense())-eig_val*l_eig_vec).max()<10**-1
             r_eig_vec = r_eig_vecs[:,k]
-            assert (self.transition_matrix.todense().dot(r_eig_vec)-eig_val*r_eig_vec).max()<10**-10
+            assert (self.transition_matrix.todense().dot(r_eig_vec)-eig_val*r_eig_vec).max()<10**-1
 
             plt.figure(figsize=(10,10))
-            plt.subplot(2,2,1)
+            plt.subplot(3,2,1)
             self.eig_vec_plot(l_eig_vec.real)
             plt.title('left eig vec (real)')
-            plt.subplot(2,2,2)
+            plt.subplot(3,2,2)
             self.eig_vec_plot(np.absolute(l_eig_vec))
             plt.title('left eig vec (absolute)')
-            plt.subplot(2,2,3)
+            plt.subplot(3,2,3)
             self.eig_vec_plot(r_eig_vec.real)
             plt.title('right eig vec (real)')
-            plt.subplot(2,2,4)
+            plt.subplot(3,2,4)
             self.eig_vec_plot(np.absolute(r_eig_vec))            
             plt.title('right eig vec (absolute)')
-            plt.savefig(self.base_file+'plots/diag_degree_bins_'+str(self.degree_bins)+'/r_l_eig_vals_'+str(k)+'_time_step_'+str(self.date_span_limit)+'.png')
+            plt.subplot(3,1,3)
+            plt.plot(eig_vals)
+            plt.title('Eigen Value Spectrum')
+            plt.savefig(self.base_file+'plots/diag_degree_bins_'+str(self.degree_bins)+'/r_l_eig_vals_'+str(k)+'_time_step_'+str(self.date_span_limit)+label+'.png')
             plt.close()
 
-for token in [(2,2),(2,3),(3,3)]:
-    lat,lon = token
-    for date in [180]:
-        traj_class = argo_traj_plot(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date)
-        traj_class.plot_cm26_cor_ellipse('o2')
+# for token in [(2,2),(2,3),(3,3)]:
+#     lat,lon = token
+#     for date in [180]:
+#         traj_class = argo_traj_plot(degree_bin_lat=lat,degree_bin_lon=lon,date_span_limit=date)
+#         traj_class.plot_cm26_cor_ellipse('co2')
