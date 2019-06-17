@@ -44,3 +44,11 @@ def matrix_size_match(outer_class,inner_class):
     outer_class.matrix.transition_matrix = outer_class.matrix_recalc([],old_outer_class_list,outer_class.transition_matrix,noise=False)
     inner_class.matrix.transition_matrix = inner_class.matrix_recalc([],old_inner_class_list,inner_class.transition_matrix,noise=False)
     return(outer_class, inner_class)
+
+def z_test(self,p_1,p_2,n_1,n_2):
+    p_1 = np.ma.array(p_1,mask = (n_1==0))
+    n_1 = np.ma.array(n_1,mask = (n_1==0))
+    p_2 = np.ma.array(p_2,mask = (n_2==0))
+    n_2 = np.ma.array(n_2,mask = (n_2==0))      
+    z_stat = (p_1-p_2)/np.sqrt(self.transition_matrix.todense()*(1-self.transition_matrix.todense())*(1/n_1+1/n_2))
+    assert (np.abs(z_stat)<1.96).data.all()

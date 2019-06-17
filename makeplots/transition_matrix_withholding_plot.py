@@ -1,3 +1,38 @@
+def resolution_difference_plot():
+    with open('transition_matrix_resolution_comparison.pickle','rb') as fp:
+        datalist = pickle.load(fp)
+    inner,outer,traj_file_type,actual_data = zip(*datalist)
+    q,residual_mean,residual_std = zip(*actual_data)
+    inner_lat,inner_lon = zip(*inner)
+    outer_lat,outer_lon = zip(*outer)
+    x_coord = np.array(outer_lon)/np.array(inner_lon)
+    y_coord = np.array(outer_lat)/np.array(inner_lat)
+
+
+    label_list = [str(x[0])+' to '+str(x[1]) for x in zip(inner,outer)]
+    colors = cm.rainbow(np.linspace(0, 1, len(x_coord)))
+    for n,plot_type in enumerate(np.unique(traj_file_type).tolist()):
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
+        mask = np.array(traj_file_type) == plot_type
+        mean_token = np.array(residual_mean)[mask]
+        for x_coord_token,y_coord_token,mean_token,std_token,label in zip(np.array(x_coord)[mask],np.array(y_coord)[mask],np.array(residual_mean)[mask],np.array(residual_std)[mask],np.array(label_list)[mask]):
+            if n == 0:
+                ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
+                plt.title('Argo Resolution Difference Uncertainty')
+            if n ==1:
+                ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
+                plt.title('SOSE Resolution Difference Uncertainty')
+        plt.xlabel('Ratio of Longitude Resolution')
+        plt.ylabel('Ratio of Latitude Resolution')
+        plt.legend()
+
+    ax.set_xlabel('Comparison Matrix Timestep')
+    ax.set_ylabel('Mean L2 Norm Difference')
+    plt.legend()
+    plt.savefig('date_difference_l2')
+    plt.close()
+
 def date_difference_plot():
     with open('transition_matrix_datespace_data.pickle', 'rb') as fp:
         datalist = pickle.load(fp)
@@ -130,37 +165,3 @@ def resolution_difference_plot():
             eig_len = len(eig_x_coord)
             diff = eigen_spectrum[-eig_len:]-test_eigen_spectrum[-eig_len:]
             plt.plot(eig_x_coord,diff,label=plot_label)
-
-
-def resolution_difference_plot():
-    with open('transition_matrix_resolution_comparison.pickle','rb') as fp:
-        datalist = pickle.load(fp)
-    inner,outer,traj_file_type,actual_data = zip(*datalist)
-    q,residual_mean,residual_std = zip(*actual_data)
-    inner_lat,inner_lon = zip(*inner)
-    outer_lat,outer_lon = zip(*outer)
-    x_coord = np.array(outer_lon)/np.array(inner_lon)
-    y_coord = np.array(outer_lat)/np.array(inner_lat)
-    label_list = [str(x[0])+' to '+str(x[1]) for x in zip(inner,outer)]
-    colors = cm.rainbow(np.linspace(0, 1, len(x_coord)))
-    for n,plot_type in enumerate(np.unique(traj_file_type).tolist()):
-        fig = plt.figure()
-        ax = fig.add_subplot(1,1,1)
-        mask = np.array(traj_file_type) == plot_type
-        mean_token = np.array(residual_mean)[mask]
-        for x_coord_token,y_coord_token,mean_token,std_token,label in zip(np.array(x_coord)[mask],np.array(y_coord)[mask],np.array(residual_mean)[mask],np.array(residual_std)[mask],np.array(label_list)[mask]):
-            if n == 0:
-                ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
-                plt.title('Argo Resolution Difference Uncertainty')
-            if n ==1:
-                ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
-                plt.title('SOSE Resolution Difference Uncertainty')
-        plt.xlabel('Ratio of Longitude Resolution')
-        plt.ylabel('Ratio of Latitude Resolution')
-        plt.legend()
-
-    ax.set_xlabel('Comparison Matrix Timestep')
-    ax.set_ylabel('Mean L2 Norm Difference')
-    plt.legend()
-    plt.savefig('date_difference_l2')
-    plt.close()

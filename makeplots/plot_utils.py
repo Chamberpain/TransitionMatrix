@@ -70,7 +70,6 @@ class TBasemap(Basemap):
         return poly
 
 def basemap_setup(lat_grid,lon_grid,traj_type):
-
     X,Y = np.meshgrid(lon_grid,lat_grid)
     if traj_type == 'SOSE':
         print 'I am plotting antarctic region'
