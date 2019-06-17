@@ -69,9 +69,18 @@ class TBasemap(Basemap):
         self.set_axes_limits(ax=ax)
         return poly
 
-def basemap_setup(lat_grid,lon_grid):
+def basemap_setup(lat_grid,lon_grid,traj_type):
+
     X,Y = np.meshgrid(lon_grid,lat_grid)
-    m = Basemap(projection='cyl',fix_aspect=False)
+    if traj_type == 'SOSE':
+        print 'I am plotting antarctic region'
+        m = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cea',fix_aspect=False)
+    elif traj_type == 'Argo':
+        print 'I am plotting global region'
+        m = Basemap(projection='cea',llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=80,fix_aspect=False)
+    elif traj_type == 'Crete':
+        print 'I am plotting Crete'
+        m = Basemap(projection='cea',llcrnrlon=20.,llcrnrlat=30,urcrnrlon=30,urcrnrlat=40,fix_aspect=False)
     # m.fillcontinents(color='coral',lake_color='aqua')
     m.drawcoastlines()
     XX,YY = m(X,Y)

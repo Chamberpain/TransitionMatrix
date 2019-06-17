@@ -8,6 +8,7 @@ from netCDF4 import Dataset
 """file to create pandas dataframe from trajectory data"""
 class BaseTraj(object):
 	def __init__(self):
+		self.max_speed = 5
 		self.degree_dist = 111.7	#The km distance of one degree
 		self.f = open('../data/global_argo/traj_df_changelog.txt','w') #this is to keep a record of the floats that have been rejected
 
@@ -100,7 +101,7 @@ class GPSTraj(BaseTraj):
 		self.dataframe_directory ='../data/global_argo/'
 		self.file_path = self.dataframe_directory+'unprocessed_gps_traj.pickle'
 		try:
-			self.gps_df = pd.read_pickle(self.dataframe_directory)
+			self.gps_df = pd.read_pickle(self.file_path)
 			print 'I have successfully loaded the GPS df'
 		except IOError:
 			self.gps_df_save(os.getenv("HOME")+gps_directory)
@@ -154,12 +155,11 @@ class GPSTraj(BaseTraj):
 class AllTraj(GPSTraj,MatlabTraj):
 	def __init__(self):
 		super(AllTraj,self).__init__()
-		self.max_speed = 5
 		self.percent_reject = 0.05
 		self.lat_grid = np.arange(-90,90.1,4).tolist()
 		self.lon_grid = np.arange(-180,180.1,4).tolist() 
 		try:
-			self.df = pd.read_pickle(self.dataframe_directory+'rejected_traj_df')
+			self.df = pd.read_pickle(self.dataframe_directory+'rejected_traj_df.pickle')
 			self.speed_variance_matrix = np.load(self.dataframe_directory+'traj_speed_variance.npy')
 			self.speed_mean_matrix = np.load(self.dataframe_directory+'traj_speed_mean.npy')
 			print 'I have successfully loaded the rejected df'
@@ -171,14 +171,14 @@ class AllTraj(GPSTraj,MatlabTraj):
 				pass
 			self.df = pd.concat([self.gps_df,self.traj_df])
 			self.rejection_criteria()
-		self.df_rejected = df[df.Cruise.isin(df[df.reject==True].Cruise.unique())]
-		self.df = df[~df.Cruise.isin(df[df.reject==True].Cruise.unique())]
+		self.df_rejected = self.df[self.df.Cruise.isin(self.df[self.df.reject==True].Cruise.unique())]
+		self.df = self.df[~self.df.Cruise.isin(self.df[self.df.reject==True].Cruise.unique())]
 
 		############ Show rejected statistics and redeem some floats ###########
-		percentage_df = (df_rejected[df_rejected.reject==True].groupby('Cruise').count()/df_rejected.groupby('Cruise').count())['pres'] # calculate the percentage of bad locations for each displacement
+		percentage_df = (self.df_rejected[self.df_rejected.reject==True].groupby('Cruise').count()/self.df_rejected.groupby('Cruise').count())['pres'] # calculate the percentage of bad locations for each displacement
 		for item in percentage_df.iteritems():
 			cruise,percentage = item
-			self.df_rejected.loc[df_rejected.Cruise==cruise,'percentage'] = percentage
+			self.df_rejected.loc[self.df_rejected.Cruise==cruise,'percentage'] = percentage
 
 
 	def rejection_criteria(self):
@@ -223,8 +223,8 @@ class AllTraj(GPSTraj,MatlabTraj):
 		self.df_rejected = self.df_rejected[~self.df_rejected.Cruise.isin(self.df.Cruise.unique())]
 
 	def save(self):
-		assert (~df.reject).all()	# reject flag must be false for all floats
-		assert (df.dropna(subset=['Speed'])['Lon Speed']<(self.max_speed-0.2)).all()
-		assert (df.dropna(subset=['Speed'])['Lat Speed']<(self.max_speed-0.2)).all()
+		assert (~self.df.reject).all()	# reject flag must be false for all floats
+		assert (self.df.dropna(subset=['Speed'])['Lon Speed']<(self.max_speed-0.2)).all()
+		assert (self.df.dropna(subset=['Speed'])['Lat Speed']<(self.max_speed-0.2)).all()
 		self.f.close()
 		self.df.to_pickle(self.dataframe_directory+'all_argo_traj.pickle')
