@@ -159,23 +159,33 @@ class Transition(Trajectory):
 class TransMatrix(Transition):
     def __init__(self,save=True,**kwds):
         super(TransMatrix,self).__init__(**kwds)
-
+        self.save=save
         try:
-            transition_matrix_file_path = self.base_file + 'transition_matrix/transition_matrix_degree_bins'+str(self.degree_bins)\
-            +'time_step_'+str(self.date_span_limit)+'.npz'
-            number_matrix_file_path = self.base_file + 'transition_matrix/number_matrix_degree_bins'+str(self.degree_bins)\
-            +'time_step_'+str(self.date_span_limit)+'.npz'
-            transition_matrix = load_sparse_csc(transition_matrix_file_path)
-            number_matrix = load_sparse_csc(number_matrix_file_path)
+            print 'I am attempting to load transition matrix data'
+            self.transition_matrix_file_path = self.base_file + 'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)\
+            +'_time_step_'+str(self.date_span_limit)+'.npz'
+            self.number_matrix_file_path = self.base_file + 'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)\
+            +'_time_step_'+str(self.date_span_limit)+'.npz'
+            self.index_list_file_path = self.base_file + 'transition_matrix/index_list_degree_bins_'+str(self.degree_bins)\
+            +'_time_step_'+str(self.date_span_limit)+'.npy'
+
+            transition_matrix = load_sparse_csc(self.transition_matrix_file_path)
+            number_matrix = load_sparse_csc(self.number_matrix_file_path)
+            index_list = np.load(self.index_list_file_path)
+            self.index_list_remove(index_list)
             self.load_transition_and_number_matrix(transition_matrix,number_matrix)
         except IOError: #this is the case that the file could not load
             print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,''
             print 'file was '+transition_matrix_file_path
             print 'file was '+number_matrix_file_path
             self.recompile_transition_and_number_matrix()
-        if save:
-            save_sparse_csc(transition_matrix_file_path,self.transition_matrix)
-            save_sparse_csc(transition_matrix_file_path,self.number_matrix)
+
+
+    def save_function(self,transition_matrix,number_matrix,index_list):
+        save_sparse_csc(self.transition_matrix_file_path,transition_matrix)
+        save_sparse_csc(self.transition_matrix_file_path,number_matrix)
+        np.save(self.index_list_file_path,self.index_list)
+
 
     def load_transition_and_number_matrix(self,transition_matrix,number_matrix):
         assert (np.abs(transition_matrix.sum(axis=0)-1)<10**-10).all()
@@ -185,6 +195,15 @@ class TransMatrix(Transition):
         self.transition_matrix = transition_matrix
         self.number_matrix = number_matrix
         print 'Transition matrix passed all necessary tests. Initial load complete'
+
+
+    def index_list_remove(self,index_list):
+        transition_df_holder = self.df.copy()
+        transition_df_holder.loc[self.df[self.end_bin_string].isin([tuple(x) for x in np.array(self.list)[index_list]])\
+            ,self.end_bin_string]=np.nan # make all of the end string values nan in these locations
+        transition_df_holder.loc[self.df['start bin'].isin([tuple(x) for x in np.array(self.list)[index_list]])\
+            ,'start bin']=np.nan # make all of the start bin values nan in these locations   
+        self.load_df_and_list(transition_df_holder)
 
     def column_compute(self,ii,total_list):
 #this algorithm has problems with low data density because the frame does not drop na values for the self.end_bin_string
@@ -325,16 +344,16 @@ class TransMatrix(Transition):
         index_list = np.unique(index_list+column_index.tolist()) #these may be duplicated so take unique values
 
         if index_list.tolist(): #if there is anything in the index list 
-            transition_df_holder = self.df.copy()
-            transition_df_holder.loc[self.df[self.end_bin_string].isin([tuple(x) for x in np.array(self.list)[index_list]]),self.end_bin_string]=np.nan # make all of the end string values nan in these locations
-            transition_df_holder.loc[self.df['start bin'].isin([tuple(x) for x in np.array(self.list)[index_list]]),'start bin']=np.nan # make all of the start bin values nan in these locations             
             old_total_list = copy.deepcopy(self.list)
-            self.load_df_and_list(transition_df_holder)
+            self.index_list_remove(index_list)
+
             assert ~np.isin(index_list,[old_total_list.index(list(x)) for x in self.df['start bin'].unique()]).any()
             assert ~np.isin(index_list,[old_total_list.index(list(x)) for x in self.df[self.end_bin_string].unique()]).any()
             transition_matrix,number_matrix = self.matrix_recalc(index_list,old_total_list,transition_matrix,number_matrix)
         assert transition_matrix.shape==number_matrix.shape
         self.load_transition_and_number_matrix(transition_matrix,number_matrix)
+        if self.save:
+            self.save_function(transition_matrix,number_matrix,index_list)
 
     def get_direction_matrix(self):
         """
