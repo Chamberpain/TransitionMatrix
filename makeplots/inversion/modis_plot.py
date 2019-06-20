@@ -17,14 +17,12 @@ import matplotlib.cm as cm
 from sets import Set
 import matplotlib.colors as mcolors         
 from netCDF4 import Dataset
-from landschutzer_plot import base_inversion_plot
+from inverse_plot import InversionPlot
 
-
-class modis_plot(base_inversion_plot):
+class ModisPlot(InversionPlot):
 	def __init__(self,**kwds):
 		super(modis_plot,self).__init__(**kwds)
-
-		file_ = self.info.base_file+'../../Raw/MODIS/'
+		file_ = self.info.base_file+'/data/MODIS/'
 		datalist = []
 		for _ in os.listdir(file_):
 			if _ == '.DS_Store':

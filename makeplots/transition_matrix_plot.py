@@ -1,15 +1,13 @@
 import matplotlib.pyplot as plt
 import numpy as np
-if __name__ == '__main__':
-    import os, sys
-    # get an absolute path to the directory that contains mypackage
+import os, sys
+# get an absolute path to the directory that contains mypackage
+try:
+    make_plot_dir = os.path.dirname(os.path.realpath(__file__))
+except NameError:
     make_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
-    sys.path.append(os.path.normpath(os.path.join(make_plot_dir, '../compute')))
-    from transition_matrix_compute import TransMatrix,Trajectory
-else:
-    from ..compute.transition_matrix_compute import TransMatrix,Trajectory
-
-
+sys.path.append(os.path.normpath(os.path.join(make_plot_dir, '../compute/')))
+from transition_matrix_compute import TransMatrix,Trajectory
 import pandas as pd
 import scipy
 import matplotlib.colors as colors
@@ -85,16 +83,16 @@ class TransitionPlot(TransMatrix):
         k = k.T
         print k
         number_matrix_plot = self.transition_vector_to_plottable(k)
-        matplotlib.pyplot.figure('number matrix',figsize=(10,10))
-        m,XX,YY = self.matrix_plot_setup()
+        plt.figure('number matrix',figsize=(10,10))
+        XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
         number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
-        m.pcolormesh(XX,YY,number_matrix_plot,cmap=matplotlib.pyplot.cm.magma)
-        # matplotlib.pyplot.title('Transition Density',size=30)
-        cbar = matplotlib.pyplot.colorbar()
+        m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma)
+        # plt.title('Transition Density',size=30)
+        cbar = plt.colorbar()
         cbar.set_label(label='Transition Number',size=30)
         cbar.ax.tick_params(labelsize=30)
-        matplotlib.pyplot.savefig('../plots/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        matplotlib.pyplot.close()
+        plt.savefig('../plots/number_matrix/number_matrix_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        plt.close()
 
     def standard_error_plot(self):
 
@@ -102,40 +100,40 @@ class TransitionPlot(TransMatrix):
         row_list = self.transition_matrix.tocoo().row.tolist()
         column_list = self.transition_matrix.tocoo().col.tolist()
         data_list = self.transition_matrix.tocoo().data.tolist()        
-        sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.transition.list),len(self.transition.list)))
+        sparse_ones = scipy.sparse.csc_matrix(([1 for x in range(len(data_list))],(row_list,column_list)),shape=(len(self.list),len(self.list)))
         standard_error = np.sqrt(self.transition_matrix*(sparse_ones-self.transition_matrix)/self.number_matrix)
         standard_error = scipy.sparse.csc_matrix(standard_error)
         k = np.diagonal(standard_error.todense())
         standard_error_plot = self.transition_vector_to_plottable(k)
-        matplotlib.pyplot.figure('standard error')
+        plt.figure('standard error')
         # m.fillcontinents(color='coral',lake_color='aqua')
         # number_matrix_plot[number_matrix_plot>1000]=1000
-        m,XX,YY = self.matrix_plot_setup()
+        XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
         q = self.number_matrix.sum(axis=0)
         q = q.T
         q = np.ma.masked_equal(q,0)
         standard_error_plot = np.ma.array(standard_error_plot,mask=self.transition_vector_to_plottable(q)==0)
-        m.pcolormesh(XX,YY,standard_error_plot,cmap=matplotlib.pyplot.cm.cividis)
-        matplotlib.pyplot.title('Standard Error',size=30)
-        matplotlib.pyplot.colorbar(label='Standard Error')
-        matplotlib.pyplot.savefig('../plots/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        matplotlib.pyplot.close()
+        m.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
+        plt.title('Standard Error',size=30)
+        plt.colorbar(label='Standard Error')
+        plt.savefig('../plots/number_matrix/standard_error_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        plt.close()
 
     def transition_matrix_plot(self,filename):
-        matplotlib.pyplot.figure(figsize=(10,10))
+        plt.figure(figsize=(10,10))
         k = np.diagonal(self.transition_matrix.todense())
         transition_plot = self.transition_vector_to_plottable(k)
-        m,XX,YY = self.matrix_plot_setup()
+        XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
         k = self.number_matrix.sum(axis=0)
         k = k.T
         transition_plot = np.ma.array(100*(1-transition_plot),mask=self.transition_vector_to_plottable(k)==0)
         m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=100) # this is a plot for the tendancy of the residence time at a grid cell
-        cbar = matplotlib.pyplot.colorbar()
+        cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=30)
         cbar.set_label('% Particles Dispersed',size=30)
-        # matplotlib.pyplot.title('1 - diagonal of transition matrix',size=30)
-        matplotlib.pyplot.savefig('../plots/transition_plots/'+filename+'_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
-        matplotlib.pyplot.close()
+        # plt.title('1 - diagonal of transition matrix',size=30)
+        plt.savefig('../plots/transition_plots/trans_diag_degree_bins_'+str(self.degree_bins)+'_time_step_'+str(self.date_span_limit)+'.png')
+        plt.close()
 
 
     def quiver_plot(self,trans_mat,arrows=True,degree_sep=4,scale_factor=20):
@@ -289,30 +287,7 @@ class TransitionPlot(TransMatrix):
             }
 
         cmap = mcolors.LinearSegmentedColormap('my_colormap', cdict, 100) 
-        file_ = '../argo_traj_box/ar_index_global_prof.txt'
-        df_ = pd.read_csv(file_,skiprows=8)
-        df_['Cruise'] = [dummy.split('/')[1] for dummy in df_['file'].values]
-        df_ = df_[~df_.date.isna()]
-        df_['Date'] = pd.to_datetime([int(_) for _ in df_.date.values.tolist()],format='%Y%m%d%H%M%S')
-        df_['Lat'] = df_['latitude']
-        df_['Lon'] = df_['longitude']
-        df_ = df_[['Lat','Lon','Date','Cruise']]
-        active_floats = df_[df_.Date>(df_.Date.max()-relativedelta(months=6))].Cruise.unique()
-        df_ = df_[df_.Cruise.isin(active_floats)]
-        df_ = df_.drop_duplicates(subset='Cruise',keep='first')
-        df_['Age'] = np.ceil((df_.Date.max()-df_.Date).dt.days/360.)
-        df_['bins_lat'] = pd.cut(df_.Lat,bins = self.info.bins_lat,labels=self.info.bins_lat[:-1])
-        df_['bins_lon'] = pd.cut(df_.Lon,bins = self.info.bins_lon,labels=self.info.bins_lon[:-1])
-        df_['bin_index'] = zip(df_['bins_lat'].values,df_['bins_lon'].values)
-        float_vector = np.zeros((self.matrix.transition_matrix.shape[0],1))
-        for x in df_['bin_index'].unique():
-            try:
-                idx = self.transition.list.index(list(x))
-                df_dummy = df_[df_['bin_index']==x]
-                percent = len(df_dummy)/df_dummy.Age.mean()
-                float_vector[idx] = percent
-            except ValueError:
-                print str(x)+' is not found'
+        float_vector = self.get_argo_vector()
         plt.figure()
         plot_vector = self.matrix.transition_vector_to_plottable(float_vector)
         original_plot_vector = plot_vector
@@ -422,7 +397,7 @@ def figure2():
             traj_class = TransMatrix(lat,lon,date)
             traj_class.get_direction_matrix()
             traj_class.quiver_plot(traj_class.transition_matrix,degree_sep=4,scale_factor=25)
-            matplotlib.pyplot.savefig('test')
+            plt.savefig('test')
 
 def gps_argos_compare():
     argos_class = TransMatrix(degree_bin_lat=2,degree_bin_lon=3,date_span_limit=100,traj_file_type='Argo',float_type='ARGOS')
