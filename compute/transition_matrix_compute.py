@@ -15,16 +15,17 @@ class BaseInfo(object):
         self.season = season
         self.float_type=float_type
         self.traj_file_type = traj_file_type
+        self.project_base = '/Users/pchamberlain/Projects/transition_matrix/'
         if self.traj_file_type=='Argo':
-            self.base_file = '../data/global_argo/'  #this is a total hack to easily change the code to run sose particles
+            self.base_file = self.project_base+'data/global_argo/'  #this is a total hack to easily change the code to run sose particles
             # self.base_file = os.getenv("HOME")+'/transition_matrix/'
             print 'I am loading Argo'
         elif self.traj_file_type=='SOSE':
-            self.base_file = os.getenv("HOME")+'../data/sose/'
+            self.base_file = self.project_base+'data/sose/'
             # self.base_file = os.getenv("HOME")+'/transition_matrix/sose/'
             print 'I am loading SOSE data'
         if self.traj_file_type=='Crete':
-            self.base_file = os.getenv("HOME")+'../data/crete/'  #this is a total hack to easily change the code to run sose particles
+            self.base_file = self.project_base+'data/crete/'  #this is a total hack to easily change the code to run sose particles
             # self.base_file = os.getenv("HOME")+'/transition_matrix/'
             print 'I am loading Crete'
         print 'I have started argo traj data'
