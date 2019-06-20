@@ -1,6 +1,15 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from ../compute/transition_matrix_compute import TransMatrix,Trajectory
+if __name__ == '__main__':
+    import os, sys
+    # get an absolute path to the directory that contains mypackage
+    make_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
+    sys.path.append(os.path.normpath(os.path.join(make_plot_dir, '../compute')))
+    from transition_matrix_compute import TransMatrix,Trajectory
+else:
+    from ..compute.transition_matrix_compute import TransMatrix,Trajectory
+
+
 import pandas as pd
 import scipy
 import matplotlib.colors as colors
@@ -10,10 +19,10 @@ import matplotlib.cm as cm
 from sets import Set
 from dateutil.relativedelta import relativedelta
 import matplotlib.colors as mcolors         
-from utils import basemap_setup
+from plot_utils import basemap_setup
 
 
-class TrajectoryPlot(Trajectory)
+class TrajectoryPlot(Trajectory):
     pass
     def profile_density_plot(self): #plot the density of profiles
         ZZ = np.zeros([len(self.bins_lat),len(self.bins_lon)])
@@ -60,9 +69,8 @@ class TrajectoryPlot(Trajectory)
         plt.close()
 
 class TransitionPlot(TransMatrix):
-    def __init__(self,traj_class,time_multiplyer=1):
-        super(TransMatrix,self).__init__(**kwds)
-
+    def __init__(self,time_multiplyer=1,**kwds):
+        super(TransitionPlot,self).__init__(**kwds)
 
     def transition_vector_to_plottable(self,vector):
         plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
