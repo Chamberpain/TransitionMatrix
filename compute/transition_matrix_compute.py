@@ -157,34 +157,40 @@ class Transition(Trajectory):
         self.load_df_and_list(dataframe)
 
 class TransMatrix(Transition):
-    def __init__(self,save=True,**kwds):
+    def __init__(self,save=True,recompile=False,**kwds):
         super(TransMatrix,self).__init__(**kwds)
         self.save=save
-        try:
-            print 'I am attempting to load transition matrix data'
-            self.transition_matrix_file_path = self.base_file + 'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)\
-            +'_time_step_'+str(self.date_span_limit)+'.npz'
-            self.number_matrix_file_path = self.base_file + 'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)\
-            +'_time_step_'+str(self.date_span_limit)+'.npz'
-            self.index_list_file_path = self.base_file + 'transition_matrix/index_list_degree_bins_'+str(self.degree_bins)\
-            +'_time_step_'+str(self.date_span_limit)+'.npy'
-
-            transition_matrix = load_sparse_csc(self.transition_matrix_file_path)
-            number_matrix = load_sparse_csc(self.number_matrix_file_path)
-            index_list = np.load(self.index_list_file_path)
-            self.index_list_remove(index_list)
-            self.load_transition_and_number_matrix(transition_matrix,number_matrix)
-        except IOError: #this is the case that the file could not load
-            print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,''
-            print 'file was '+transition_matrix_file_path
-            print 'file was '+number_matrix_file_path
+        self.transition_matrix_file_path = self.base_file + 'transition_matrix/transition_matrix_degree_bins_'+str(self.degree_bins)\
+        +'_time_step_'+str(self.date_span_limit)+'.npz'
+        self.number_matrix_file_path = self.base_file + 'transition_matrix/number_matrix_degree_bins_'+str(self.degree_bins)\
+        +'_time_step_'+str(self.date_span_limit)+'.npz'
+        self.index_list_file_path = self.base_file + 'transition_matrix/index_list_degree_bins_'+str(self.degree_bins)\
+        +'_time_step_'+str(self.date_span_limit)+'.npy'
+        if recompile:
             self.recompile_transition_and_number_matrix()
+        else:
+            try:
+                print 'I am attempting to load transition matrix data'
+
+
+                transition_matrix = load_sparse_csc(self.transition_matrix_file_path)
+                number_matrix = load_sparse_csc(self.number_matrix_file_path)
+                index_list = np.load(self.index_list_file_path)
+                self.index_list_remove(index_list)
+                self.load_transition_and_number_matrix(transition_matrix,number_matrix)
+            except IOError: #this is the case that the file could not load
+                print 'i could not load the transition matrix, I am recompiling with degree step size', self.degree_bins,''
+                print 'file was '+self.transition_matrix_file_path
+                print 'file was '+self.number_matrix_file_path
+                print 'file was '+self.index_list_file_path
+
+                self.recompile_transition_and_number_matrix()
 
 
     def save_function(self,transition_matrix,number_matrix,index_list):
         save_sparse_csc(self.transition_matrix_file_path,transition_matrix)
-        save_sparse_csc(self.transition_matrix_file_path,number_matrix)
-        np.save(self.index_list_file_path,self.index_list)
+        save_sparse_csc(self.number_matrix_file_path,number_matrix)
+        np.save(self.index_list_file_path,index_list)
 
 
     def load_transition_and_number_matrix(self,transition_matrix,number_matrix):
