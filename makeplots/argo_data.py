@@ -4,28 +4,31 @@ from dateutil.relativedelta import relativedelta
 from plot_utils import basemap_setup,transition_vector_to_plottable
 import matplotlib.pyplot as plt
 import os, sys
+import datetime
 # get an absolute path to the directory that contains mypackage
 try:
     make_plot_dir = os.path.dirname(os.path.realpath(__file__))
 except NameError:
     make_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
 sys.path.append(os.path.normpath(os.path.join(make_plot_dir, '../compute/')))
-from transition_matrix_compute import BaseInfo
+from transition_matrix_compute import Transition
 
 
-class Float(BaseInfo):
-	def __init__(self,index_list,**kwds):
-		super(Float,self).__init__(**kwds)
-		self.index_list = index_list
+class Float(object):
+	def __init__(self,transition_plot,**kwds):
+		self.bins_lat = transition_plot.bins_lat
+		self.bins_lon = transition_plot.bins_lon
+		self.list = transition_plot.list
+		self.base_file = transition_plot.base_file
 
 	def reshape_float_vector(self,age_return):
 		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
 		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
 		self.df['bin_index'] = zip(self.df['bins_lat'].values,self.df['bins_lon'].values)
-		float_vector = np.zeros(len(self.index_list))
+		float_vector = np.zeros(len(self.list))
 		for x,age in self.df[['bin_index','Age']].values:
 			try:
-				idx = self.index_list.index(list(x))
+				idx = self.list.index(list(x))
 # this is terrible notation, but it finds the index in the index list of the touple bins_lat, bins_lon
 				if age_return:
 					percent = 1/np.ceil(age)
@@ -73,7 +76,7 @@ class Argo(Float):
 class SOCCOM(Float):
 	def __init__(self,age_return=False,**kwds):
 		super(SOCCOM,self).__init__(**kwds)
-		path = '../data/SOCCOM_trajectory/'
+		path = self.base_file+'../SOCCOM_trajectory/'
 		files = []
 		# r=root, d=directories, f = files
 		for r, d, f in os.walk(path):
@@ -87,11 +90,11 @@ class SOCCOM(Float):
 			df_holder.columns = ['Float_ID','Cycle','Date','Time','Lat','Lon','POS_QC','Cruise'] 
 			df_holder['Date'] = pd.to_datetime(df_holder['Date'],format='%Y%m%d')
 			df_holder = df_holder[df_holder.POS_QC.isin([0,1])]
-			if (datetime.date.today()-df_holder.Date.tail(1)).dt.days.values[0]>270:
+			if (datetime.datetime.today()-df_holder.Date.tail(1)).dt.days.values[0]>270:
 				print 'Float is dead, rejecting'
 				continue
 			df_token = df_holder[['Lat','Lon']].tail(1)
 			df_token['Age'] = ((df_holder.Date.tail(1)-df_holder.Date.head(1).values).dt.days/365).values[0]
-			df_list.append(df)
+			df_list.append(df_token)
 		self.df = pd.concat(df_list)
 		self.reshape_float_vector(age_return)

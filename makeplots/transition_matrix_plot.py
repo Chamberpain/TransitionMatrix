@@ -136,17 +136,19 @@ class TransitionPlot(TransMatrix):
         plt.close()
 
 
-    def quiver_plot(self,trans_mat,arrows=True,degree_sep=4,scale_factor=20):
+    def quiver_plot(self,trans_mat,m=False,arrows=True,degree_sep=4,scale_factor=20):
         """
         This plots the mean transition quiver as well as the variance ellipses
         """
 # todo: need to check this over. I think there might be a bug.
-        east_west = np.multiply(trans_mat,self.east_west)
-        north_south = np.multiply(trans_mat,self.north_south)
-        ew_test = scipy.sparse.csc_matrix(east_west)
-        ns_test = scipy.sparse.csc_matrix(north_south)
 
-        m,XX,YY = basemap_setup(self.bins_lon,self.bins_lat,self.traj_file_type)  
+        east_west = np.multiply(trans_mat.todense(),self.east_west)
+        north_south = np.multiply(trans_mat.todense(),self.north_south)
+        print 'I have succesfully multiplied the transition_matrices'
+
+
+        if not m:
+            dummy,dummy,m = basemap_setup(self.bins_lon,self.bins_lat,self.traj_file_type)  
 
         Y_ = np.arange(-68.0,66.0,degree_sep)
         X_ = np.arange(-162.0,162.0,degree_sep)
@@ -159,7 +161,7 @@ class TransitionPlot(TransMatrix):
                 print 'lat = ',lat
                 print 'lon = ',lon 
                 try:
-                    index = self.transition.list.index([lat,lon])
+                    index = self.list.index([lat,lon])
                 except ValueError:
                     print 'There was a value error in the total list'
                     continue
@@ -185,10 +187,11 @@ class TransitionPlot(TransMatrix):
                 except ValueError:
                     print ' there was a value error in the calculation of the transition_matrix'
                     continue
-        e_w = np.ma.array(e_w,mask=(e_w==0))
-        n_s = np.ma.array(n_s,mask=(n_s==0))
         if arrows:
+            e_w = np.ma.array(e_w,mask=(e_w==0))
+            n_s = np.ma.array(n_s,mask=(n_s==0))            
             m.quiver(XX,YY,e_w*5000,n_s*5000,scale=25)
+        return m
 
     def plot_latest_soccom_locations(self,m):
         try:
