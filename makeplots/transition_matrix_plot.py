@@ -17,7 +17,7 @@ import matplotlib.cm as cm
 from sets import Set
 from dateutil.relativedelta import relativedelta
 import matplotlib.colors as mcolors         
-from plot_utils import basemap_setup
+from plot_utils import basemap_setup,transition_vector_to_plottable
 
 
 class TrajectoryPlot(Trajectory):
@@ -70,19 +70,19 @@ class TransitionPlot(TransMatrix):
     def __init__(self,time_multiplyer=1,**kwds):
         super(TransitionPlot,self).__init__(**kwds)
 
-    def transition_vector_to_plottable(self,vector):
-        plottable = np.zeros([len(self.bins_lat),len(self.bins_lon)])
-        for n,tup in enumerate(self.list):
-            ii_index = self.bins_lon.index(tup[1])
-            qq_index = self.bins_lat.index(tup[0])
-            plottable[qq_index,ii_index] = vector[n]
-        return plottable
+        self.multiplyer = time_multiplyer
+        matrix = self.transition_matrix
+        for _ in range(time_multiplyer-1):
+            matrix = matrix.dot(self.transition_matrix)
+        self.transition_matrix = matrix
+# routine to propogate transition matrix into the future, can be used for forward or inverse problem
+
       
     def number_plot(self): 
         k = self.number_matrix.sum(axis=0)
         k = k.T
         print k
-        number_matrix_plot = self.transition_vector_to_plottable(k)
+        number_matrix_plot = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,k)
         plt.figure('number matrix',figsize=(10,10))
         XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
         number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
@@ -104,7 +104,7 @@ class TransitionPlot(TransMatrix):
         standard_error = np.sqrt(self.transition_matrix*(sparse_ones-self.transition_matrix)/self.number_matrix)
         standard_error = scipy.sparse.csc_matrix(standard_error)
         k = np.diagonal(standard_error.todense())
-        standard_error_plot = self.transition_vector_to_plottable(k)
+        standard_error_plot = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,k)
         plt.figure('standard error')
         # m.fillcontinents(color='coral',lake_color='aqua')
         # number_matrix_plot[number_matrix_plot>1000]=1000
@@ -112,7 +112,7 @@ class TransitionPlot(TransMatrix):
         q = self.number_matrix.sum(axis=0)
         q = q.T
         q = np.ma.masked_equal(q,0)
-        standard_error_plot = np.ma.array(standard_error_plot,mask=self.transition_vector_to_plottable(q)==0)
+        standard_error_plot = np.ma.array(standard_error_plot,mask=transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,q)==0)
         m.pcolormesh(XX,YY,standard_error_plot,cmap=plt.cm.cividis)
         plt.title('Standard Error',size=30)
         plt.colorbar(label='Standard Error')
@@ -122,11 +122,11 @@ class TransitionPlot(TransMatrix):
     def transition_matrix_plot(self,filename):
         plt.figure(figsize=(10,10))
         k = np.diagonal(self.transition_matrix.todense())
-        transition_plot = self.transition_vector_to_plottable(k)
+        transition_plot = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,k)
         XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
         k = self.number_matrix.sum(axis=0)
         k = k.T
-        transition_plot = np.ma.array(100*(1-transition_plot),mask=self.transition_vector_to_plottable(k)==0)
+        transition_plot = np.ma.array(100*(1-transition_plot),mask=transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,k)==0)
         m.pcolormesh(XX,YY,transition_plot,vmin=0,vmax=100) # this is a plot for the tendancy of the residence time at a grid cell
         cbar = plt.colorbar()
         cbar.ax.tick_params(labelsize=30)
@@ -190,81 +190,14 @@ class TransitionPlot(TransMatrix):
         if arrows:
             m.quiver(XX,YY,e_w*5000,n_s*5000,scale=25)
 
-
-    def get_SOCCOM_vector(self,age_return=False,future_projection=True):
-        path = '/Users/pchamberlain/Projects/transition_matrix/SOCCOM_trajectory/'
-        files = []
-        # r=root, d=directories, f = files
-        for r, d, f in os.walk(path):
-            for file in f:
-                if '.txt' in file:
-                    files.append(os.path.join(r, file))
-        df_list = []
-        for file in files:
-            pd.read_csv(file)
-            df_holder = pd.read_csv(file,skiprows=[1,2,3],delim_whitespace=True,usecols=['Float_ID','Cycle','Date','Time','Lat','Lon','POS_QC','#'])
-            df_holder.columns = ['Float_ID','Cycle','Date','Time','Lat','Lon','POS_QC','Cruise'] 
-            df_holder['Date'] = pd.to_datetime(df_holder['Date'],format='%Y%m%d')
-            df_holder = df_holder[df_holder.POS_QC.isin([0,1])]
-            if (datetime.date.today()-df_holder.Date.tail(1)).dt.days.values[0]>270:
-                print 'Float is dead, rejecting'
-                continue
-            df = df_holder[['Lat','Lon']].tail(1)
-            df['Age'] = ((df_holder.Date.tail(1)-df_holder.Date.head(1).values).dt.days/365).values[0]
-            df_list.append(df)
-        df_tot = pd.concat(df_list)
-        df_tot['bins_lat'] = pd.cut(df_tot.Lat,bins = self.info.bins_lat,labels=self.info.bins_lat[:-1])
-        df_tot['bins_lon'] = pd.cut(df_tot.Lon,bins = self.info.bins_lon,labels=self.info.bins_lon[:-1])
-        df_tot['bin_index'] = zip(df_tot['bins_lat'].values,df_tot['bins_lon'].values)
-        float_vector = np.zeros(self.matrix.transition_matrix.shape[0])
-        for x,age in df_tot[['bin_index','Age']].values:
-            try:
-                idx = self.transition.list.index(list(x))
-                if age_return:
-                    percent = 1/np.ceil(age)
-                    if percent < 1/6.:
-                        percent = 0
-                    float_vector[idx] = percent
-                else:
-                    float_vector[idx] = 1
-            except ValueError:
-                print str(x)+' is not found'
-        if future_projection:
-            float_vector = self.matrix.transition_matrix.dot(float_vector)
-        assert (float_vector<=1).all()
-        return float_vector
-
     def plot_latest_soccom_locations(self,m):
-        y,x = zip(*np.array(self.transition.list)[self.soccom_location>0])
+        try:
+            self.soccom
+        except AttributeError:
+            self.soccom = SOCCOM(degree_bin_lat=self.bins_lat,degree_bin_lon=self.bins_lon)
+        y,x = zip(*np.array(self.list)[self.soccom.vector>0])
         m.scatter(x,y,marker='*',color='b',s=34,latlon=True)
         return m
-
-    def get_argo_vector():
-        file_ = '../../argo_traj_box/ar_index_global_prof.txt'
-        df_ = pd.read_csv(file_,skiprows=8)
-        df_['Cruise'] = [dummy.split('/')[1] for dummy in df_['file'].values]
-        df_ = df_[~df_.date.isna()]
-        df_['Date'] = pd.to_datetime([int(_) for _ in df_.date.values.tolist()],format='%Y%m%d%H%M%S')
-        df_['Lat'] = df_['latitude']
-        df_['Lon'] = df_['longitude']
-        df_ = df_[['Lat','Lon','Date','Cruise']]
-        active_floats = df_[df_.Date>(df_.Date.max()-relativedelta(months=6))].Cruise.unique()
-        df_ = df_[df_.Cruise.isin(active_floats)]
-        df_ = df_.drop_duplicates(subset='Cruise',keep='first')
-        df_['Age'] = np.ceil((df_.Date.max()-df_.Date).dt.days/360.)
-        df_['bins_lat'] = pd.cut(df_.Lat,bins = self.info.bins_lat,labels=self.info.bins_lat[:-1])
-        df_['bins_lon'] = pd.cut(df_.Lon,bins = self.info.bins_lon,labels=self.info.bins_lon[:-1])
-        df_['bin_index'] = zip(df_['bins_lat'].values,df_['bins_lon'].values)
-        float_vector = np.zeros((self.matrix.transition_matrix.shape[0],1))
-        for x in df_['bin_index'].unique():
-            try:
-                idx = self.transition.list.index(list(x))
-                df_dummy = df_[df_['bin_index']==x]
-                percent = len(df_dummy)/df_dummy.Age.mean()
-                float_vector[idx] = percent
-            except ValueError:
-                print str(x)+' is not found'
-        return float_vector
 
     def get_argo_vector():
         cdict = {'red':  ((0.0, 0.4, 1.0),
@@ -289,7 +222,7 @@ class TransitionPlot(TransMatrix):
         cmap = mcolors.LinearSegmentedColormap('my_colormap', cdict, 100) 
         float_vector = self.get_argo_vector()
         plt.figure()
-        plot_vector = self.matrix.transition_vector_to_plottable(float_vector)
+        plot_vector = self.transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,float_vector)
         original_plot_vector = plot_vector
         plot_vector = np.ma.masked_equal(plot_vector,0)
         m,XX,YY = self.matrix.matrix_plot_setup()
@@ -299,7 +232,7 @@ class TransitionPlot(TransMatrix):
         for _ in range(3):
             float_vector = self.matrix.transition_matrix.todense().dot(float_vector)
         plt.figure()
-        plot_vector = self.matrix.transition_vector_to_plottable(float_vector)
+        plot_vector = self.transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,float_vector)
         plot_vector = np.ma.masked_equal(plot_vector,0)
         print plot_vector.sum()-original_plot_vector.sum()
         m,XX,YY = self.matrix.matrix_plot_setup()
@@ -315,7 +248,7 @@ class TransitionPlot(TransMatrix):
         for k in range(20):
             months = 6*2**k
             w = w.dot(w)
-            future_output = self.transition_vector_to_plottable((w.dot(scipy.sparse.csc_matrix(vector))).todense())
+            future_output = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,(w.dot(scipy.sparse.csc_matrix(vector))).todense())
             future_output = np.ma.masked_less(future_output,10**-2) 
             plt.figure(figsize=(10,10))
             m = Basemap(projection='cyl',fix_aspect=False)
@@ -328,7 +261,7 @@ class TransitionPlot(TransMatrix):
             plt.show()
 
     def eig_vec_plot(self,eig_vec):
-        eig_vec_token = self.transition_vector_to_plottable(eig_vec)
+        eig_vec_token = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,eig_vec)
         eig_vec_token = np.ma.masked_equal(eig_vec_token,0) 
         if self.traj_file_type=='SOSE':
             m = Basemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cyl',fix_aspect=False)
@@ -378,7 +311,7 @@ def SOCCOM_death_plot():
     traj_class = transition_class_loader(2,3,100,'Argo')
     traj_plot = argo_traj_plot(traj_class,time_multiplyer=2)
     float_vector = argo_traj_plot.get_SOCCOM_vector(age_return=True)
-    plottable = traj_class.matrix.transition_vector_to_plottable(float_vector)
+    plottable = traj_class.matransition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,float_vector)
     traj_class.info.traj_file_type = 'SOSE'
     m,XX,YY = basemap_setup(traj_class.bins_lon,traj_class.bins_lat,traj_class.traj_file_type)  
     m.fillcontinents(color='coral',lake_color='aqua')

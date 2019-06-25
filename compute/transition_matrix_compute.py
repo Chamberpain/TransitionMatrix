@@ -28,7 +28,7 @@ class BaseInfo(object):
             self.base_file = self.project_base+'data/crete/'  #this is a total hack to easily change the code to run sose particles
             # self.base_file = os.getenv("HOME")+'/transition_matrix/'
             print 'I am loading Crete'
-        print 'I have started argo traj data'
+        print 'I have started BaseInfo'
         self.degree_bins = (degree_bin_lat,degree_bin_lon)
         self.date_span_limit = date_span_limit
         self.bins_lat = np.arange(-90,90.1,self.degree_bins[0]).tolist()
