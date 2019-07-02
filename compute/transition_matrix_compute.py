@@ -399,12 +399,12 @@ class TransMatrix(Transition):
         direction_mat[direction_mat<noise/200]=0
         return scipy.sparse.csc_matrix(direction_mat)
 
-    def rescale_matrix(self,matrix_):
+    def rescale_matrix(self,matrix_,checksum=10**-2):
         print 'rescaling the matrix'
         mat_sum = matrix_.todense().sum(axis=0)
         scalefactor,dummy = np.meshgrid(1/mat_sum,1/mat_sum)
         matrix_ = scipy.sparse.csc_matrix(np.array(matrix_.todense())*np.array(scalefactor)) #must make these arrays so that the multiplication is element wise
-        assert (np.abs(matrix_.sum(axis=0)-1)<10**-2).all()
+        assert (np.abs(matrix_.sum(axis=0)-1)<checksum).all()
         return matrix_
 
     # def delete_w(self):
