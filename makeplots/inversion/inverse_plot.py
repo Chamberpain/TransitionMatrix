@@ -11,7 +11,7 @@ from transition_matrix_plot import TransitionPlot
 from plot_utils import basemap_setup,transition_vector_to_plottable
 from argo_data import SOCCOM
 import numpy as np
-from target_load import CM2p6Correlation,CM2p6Vector,GlodapCorrelation,GlodapVector
+from target_load import CM2p6Correlation,CM2p6VectorSpatialGradient,CM2p6VectorTemporalVariance,CM2p6VectorMean,GlodapCorrelation,GlodapVector
 import matplotlib.pyplot as plt
 import scipy
 
@@ -21,24 +21,26 @@ class InversionPlot(TransitionPlot):
         super(InversionPlot,self).__init__(**kwds)
         self.target = target_vector_class
         self.correlation = correlation_matrix_class
-        self.float = float_class
+        self.float_class = float_class
 
-    def get_optimal_float_locations(self,vector,float_number=1000):
+    def get_optimal_float_locations(self,vector,float_number=1000,exploration_factor=0):
         """ accepts a target vecotr in sparse matrix form, returns the ideal float locations and weights to sample that"""
-        vector = self.normalize_vector(vector)
+        vector = self.normalize_vector(vector,exploration_factor)
         vector = self.remove_float_observations(vector)
         print 'I am starting the optimization'
         optimize_fun = scipy.optimize.lsq_linear(self.correlation.matrix.dot(self.transition_matrix),\
-            np.squeeze(vector),bounds=(0,1.2),verbose=2,max_iter=40)
+            np.squeeze(vector),bounds=(0,1.2),verbose=2,max_iter=30)
         desired_vector = optimize_fun.x
         print 'It is optimized'
         lats,lons = zip(*[x for _,x in sorted(zip(desired_vector.tolist(),self.list))[::-1][:float_number]])
         return (lons,lats,desired_vector)
 
-    def normalize_vector(self,vector):
+    def normalize_vector(self,vector,exploration_factor):
 #this needs some extensive unit testing, the normalization is very ad hock
-        target_vector = vector/vector.max()+1
-        target_vector = np.log(abs(target_vector))
+        target_vector = vector-vector.min()
+        target_vector = target_vector/target_vector.max()+1
+        # target_vector = np.log(abs(target_vector))
+        target_vector = target_vector+exploration_factor*target_vector.mean()
         target_vector = target_vector/target_vector.max()
         print 'I have normalized the target vector'
         return target_vector
@@ -47,7 +49,7 @@ class InversionPlot(TransitionPlot):
         return (self.correlation.matrix.dot(self.transition_matrix)).dot(vector)
 
     def remove_float_observations(self,vector):
-        float_result = self.instrument_to_observation(self.float.vector)
+        float_result = self.instrument_to_observation(self.float_class.vector)
         float_result = float_result/float_result.max()
         vector = vector.flatten()-float_result
         vector = np.array(vector)
@@ -55,15 +57,13 @@ class InversionPlot(TransitionPlot):
         print 'I have subtracted off the SOCCOM vector'        
         return vector
 
-    def loc_plot(self,filename,variance=False,floats=500):
-        field_plot = abs(transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,self.target.vector))
-        x,y,desired_vector = self.get_optimal_float_locations(self.target.vector,float_number=500)
-        XX,YY,m = basemap_setup(self.bins_lon,self.bins_lat,self.traj_file_type)    
-        m = self.target.plot(XX,YY,m)
+    def loc_plot(self,variance=False,floats=500,exploration_factor=0):
+        x,y,desired_vector = self.get_optimal_float_locations(self.target.vector,float_number=floats,exploration_factor=exploration_factor)
+        XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)    
+        dummy,dummy,m = self.target.plot(XX=XX,YY=YY,m=m)
         m.scatter(x,y,marker='*',color='g',s=34,latlon=True)
-        m = self.plot_latest_soccom_locations(m)
-        plt.savefig(filename)
-        plt.close()
+        m = self.float_class.plot(m=m)
+        return (m,desired_vector)
 
     @classmethod 
     def landschutzer(cls,transition_plot,var):
@@ -83,6 +83,22 @@ class InversionPlot(TransitionPlot):
 
     @classmethod 
     def cm2p6(cls,transition_plot,variable,variance):
+        variance_class_dict = {'spatial':CM2p6VectorSpatialGradient,'time':CM2p6VectorTemporalVariance,'mean':CM2p6VectorMean}
         corr_matrix_class = CM2p6Correlation(transition_plot=transition_plot,variable=variable)
-        target_vector_class = CM2p6Vector(transition_plot=transition_plot,variable=variable,variance=variance)
-        return cls(correlation_matrix_class=corr_matrix_class,target_vector_class=target_vector_class)
+        target_vector_class = variance_class_dict[variance](transition_plot=transition_plot,variable=variable)
+        float_class = SOCCOM(transition_plot=transition_plot)
+        return cls(correlation_matrix_class=corr_matrix_class,target_vector_class=target_vector_class,float_class=float_class)
+
+
+def exploration_array_change(): 
+    trans_plot = TransitionPlot()
+    trans_plot.get_direction_matrix()
+    factor = 0
+    for variance in ['spatial','time','mean']:
+        for variable in ['surf_o2','surf_dic','surf_pco2','100m_dic','100m_o2']:
+            ip = InversionPlot.cm2p6(transition_plot=trans_plot,variable=variable,variance=variance)
+            filename = '../../plots/cm2p6_'+variable+'_'+variance+'_exploration_'+str(factor)
+            ip.loc_plot(exploration_factor=factor)
+            plt.title(variance+' '+variable)
+            plt.savefig(filename)
+            plt.close()

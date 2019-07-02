@@ -2,12 +2,13 @@ import numpy as np
 from netCDF4 import Dataset
 import fnmatch
 import sys,os
-import pickle
 import time
 
 
 def find_nearest(items, pivot):
 	return min(items, key=lambda x: abs(x - pivot))
+
+
 
 nc_fid_token = Dataset('/data/SO12/CM2p6/ocean_scalar.static.nc')
 mask = nc_fid_token.variables['ht'][:]>500
@@ -16,8 +17,8 @@ lat_token = nc_fid_token.variables['yt_ocean'][:]
 X,Y = np.meshgrid(lon_token,lat_token)
 lon_list = X[mask]
 lat_list = Y[mask]
-rounded_lat_list = np.arange(-81,89.6,0.5)
-rounded_lon_list = np.arange(-279.5,80.1,0.5)
+rounded_lat_list = np.arange(lat_token.min(),lat_token.max()+.5,1)
+rounded_lon_list = np.arange(lon_token.min(),lat_token.max()+.5,1)
 target_lat_list = [find_nearest(lat_token,x) for x in rounded_lat_list]
 target_lon_list = [find_nearest(lon_token,x) for x in rounded_lon_list]
 subsample_mask = np.isin(lon_list,target_lon_list)&np.isin(lat_list,target_lat_list)
@@ -34,7 +35,6 @@ try:
 	o2_surf = np.load('subsampled_o2_surf.npy')
 	pco2_surf = np.load('subsampled_pco2_surf.npy')
 	dic_surf = np.load('subsampled_dic_surf.npy')
-
 	o2_100m = np.load('subsampled_o2_100m.npy')
 	dic_100m = np.load('subsampled_dic_100m.npy')
 

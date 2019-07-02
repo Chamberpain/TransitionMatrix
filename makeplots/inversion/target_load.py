@@ -17,37 +17,48 @@ import scipy
 from compute_utils import save_sparse_csc, load_sparse_csc
 from netCDF4 import Dataset
 from compute_utils import find_nearest
+from transition_matrix_plot import TransitionPlot
+import matplotlib.cm as cm
 
-def gradient_calc(data):
-        XX,YY = np.gradient(data)
-        return XX+YY
 
 class InverseBase(object):
-    def __init__(self,transition_plot,**kwds):
-        self.list = transition_plot.list
-        self.base_file=transition_plot.base_file
-        self.bins_lat = transition_plot.bins_lat
-        self.bins_lon = transition_plot.bins_lon
-        self.degree_bins = transition_plot.degree_bins
-        self.quiver = transition_plot.quiver_plot
-        self.traj_file_type = transition_plot.traj_file_type
-        try:
-            self.east_west = transition_plot.east_west
-            self.north_south = transition_plot.north_south
-            print 'I have succesfully loaded the east_west north_south matrices'
-        except AttributeError:
-            pass
-
+	def __init__(self,transition_plot,**kwds):
+		self.list = transition_plot.list
+		self.base_file=transition_plot.base_file
+		self.bins_lat = transition_plot.bins_lat
+		self.bins_lon = transition_plot.bins_lon
+		self.degree_bins = transition_plot.degree_bins
+		self.quiver = transition_plot.quiver_plot
+		self.traj_file_type = transition_plot.traj_file_type
+		try:
+			self.east_west = transition_plot.east_west
+			self.north_south = transition_plot.north_south
+			print 'I have succesfully loaded the east_west north_south matrices'
+		except AttributeError:
+			pass
+	def gradient_calc(self,data):
+			dy = 111.7*1000
+			# bins_lat_holder = self.bins_lat
+			# bins_lat_holder[0]=-89.5
+			# bins_lat_holder[-1]=89.5
+			# x = np.cos(np.deg2rad(bins_lat_holder))*dy #scaled meridional distance
+			XX,YY = np.gradient(data,dy,dy)
+			return XX+YY
+	def data_return(self,variable):
+		data = np.load(self.base_file+self.file_dictionary[variable]) 
+		return data
 ####### target correlation ###########
 
 class TargetCorrelation(InverseBase):
 	def __init__(self,**kwds):
 		super(TargetCorrelation,self).__init__(**kwds)
 
-	def plot(self):
-		plt.figure()
-		m = self.quiver(trans_mat=self.matrix,arrows=False,scale_factor=self.scale_factor)
-		plt.show()	
+	def plot(self,m=False):
+		if not m:
+			m = self.quiver(trans_mat=self.matrix,arrows=False,scale_factor=self.scale_factor,degree_sep=8)
+		else:
+			self.quiver(trans_mat=self.matrix,arrows=False,scale_factor=self.scale_factor,degree_sep=8,m=m)
+		return m
 
 	def load_corr(self,load_file):
 		return load_sparse_csc(load_file+'.npz')
@@ -64,26 +75,34 @@ class TargetCorrelation(InverseBase):
 		self.north_south = np.multiply(mask,self.north_south)
 
 
+
+
 class CM2p6Correlation(TargetCorrelation):
 	def __init__(self,variable,**kwds):
 		super(CM2p6Correlation,self).__init__(**kwds)
-		self.cm = plt.cm.PRGn
-		self.scale_factor=3
-		file_path = './data/cm2p6_corr_'+str(variable)+'_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		self.scale_factor=.1
+		self.file_dictionary = 	{'surf_o2':'../o2_surf_corr.npy','surf_dic':'../dic_surf_corr.npy',\
+		'surf_pco2':'../pco2_surf_corr.npy','100m_dic':'../dic_100m_corr.npy','100m_o2':'../o2_100m_corr.npy'\
+		}	
+
+		corr_file_path = './data/cm2p6_corr_'+str(variable)+'_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
 		try:
-			self.matrix = self.load_corr(file_path)
+			self.matrix = self.load_corr(corr_file_path)
 		except IOError:
-			print file_path
+
+
+			print corr_file_path
 			print 'cm2p6 file not found, recompiling'
-			self.matrix = self.compile_corr(variable,file_path)
+			self.matrix = self.compile_corr(variable,corr_file_path)
+
 		self.scale_direction()
 
-	def compile_corr(self,variable,file_path):
+	def translation_list_construct(self):
 		self.lat_list = np.load(self.base_file+'../lat_list.npy')
 		lon_list = np.load(self.base_file+'../lon_list.npy')
 		lon_list[lon_list<-180]=lon_list[lon_list<-180]+360
 		self.lon_list = lon_list
-		self.corr_translation_list = []
+		self.translation = []
 		mask = (self.lon_list%1==0)&(self.lat_list%1==0)
 		lats = self.lat_list[mask]
 		lons = self.lon_list[mask]
@@ -103,22 +122,35 @@ class CM2p6Correlation(TargetCorrelation):
 				t = np.where(mask)
 			assert t[0]
 			assert len(t[0])==1
-			self.corr_translation_list.append(t[0][0])
-		if variable == 'o2':
-			data = np.load(self.base_file+'../o2_corr.npy')
-		elif variable == 'pco2':
-			data = np.load(self.base_file+'../pco2_corr.npy')
-		elif variable == 'hybrid':
-			data = (np.load(self.base_file+'../o2_corr.npy')+np.load(self.base_file+'../pco2_corr.npy'))/2
+			self.translation.append(t[0][0])
 
+
+	def compile_corr(self,variable,file_path):
+		translation_file_path = './data/cm2p6_corr_'+str(variable)+'_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		try:
+			self.translation = np.load(translation_file_path)
+		except IOError:
+			print 'translation list not found, recompiling'			
+			self.translation_list_construct()
+			np.save(file_path,self.translation)		
+
+		self.lat_list = np.load(self.base_file+'../lat_list.npy')
+		lon_list = np.load(self.base_file+'../lon_list.npy')
+		lon_list[lon_list<-180]=lon_list[lon_list<-180]+360
+		self.lon_list = lon_list
+		mask = (self.lon_list%1==0)&(self.lat_list%1==0)
+		lats = self.lat_list[mask]
+		lons = self.lon_list[mask]
+		# grab only the whole degree values
+		data = self.data_return(variable)
 		total_set = Set([tuple(x) for x in self.list])
 		row_list = []
 		col_list = []
 		data_list = []
 		mask = (self.lon_list%1==0)&(self.lat_list%1==0) # we only calculated correlations at whole degrees because of memory
-		lats = self.lat_list[mask][self.corr_translation_list] #mask out non whole degrees and only grab at locations that match to the self.transition.index
-		lons = self.lon_list[mask][self.corr_translation_list] 
-		corr_list = data[self.corr_translation_list]
+		lats = self.lat_list[mask][self.translation] #mask out non whole degrees and only grab at locations that match to the self.transition.index
+		lons = self.lon_list[mask][self.translation] 
+		corr_list = data[self.translation]
 
 		# test_Y,test_X = zip(*self.transition.list)
 		for k,(base_lat,base_lon,corr) in enumerate(zip(lats,lons,corr_list)):
@@ -157,15 +189,16 @@ class TargetVector(InverseBase):
 	def load_vector(self,load_file):
 		return np.load(load_file+'.npy')
 
-	def plot(self,XX,YY,m=False):
-		plt.figure()
-		plot_vector = abs(transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.index_list,self.vector))
+	def plot(self,XX=False,YY=False,m=False):
+		plot_vector = abs(transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,self.vector))
+		print 'shape of plot vector is ',plot_vector.shape
 		if not m:
 			XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)
-		m.pcolormesh(XX,YY,np.ma.masked_equal(plot_vector,0),cmap=self.cm)
-		plt.colorbar(label=self.label)
+		print 'shape of the coordinate matrix is ',XX.shape 
+		m.pcolormesh(XX,YY,np.ma.masked_equal(plot_vector,0),cmap=self.cm,vmin=self.vmin,vmax=self.vmax)
+		plt.colorbar(label=self.unit)
 		plt.title(self.title)
-		return m
+		return (XX,YY,m)
 
 class LandschutzerCO2Flux(TargetVector):
 	def __init__(self,var=False,**kwds):
@@ -233,7 +266,7 @@ class MODISVector(TargetVector):
 			data = np.ma.var(dat,axis=0)
 		else:		
 			dummy = np.ma.mean(dat,axis=0)
-			data = gradient_calc(dummy)
+			data = self.gradient_calc(dummy)
 
 		vector = plottable_to_transition_vector(self.bins_lat,self.bins_lon,self.list,data)
 		np.save(save_file,vector)
@@ -256,7 +289,7 @@ class GlodapVector(TargetVector):
 			if variable in [flux]:
 				nc_fid = Dataset(file_ + _)
 				data = nc_fid[variable][0,:,:]
-				data = gradient_calc(data)
+				data = self.gradient_calc(data)
 		y = nc_fid['lat'][:]
 		x = nc_fid['lon'][:]
 		x[x>180] = x[x>180]-360
@@ -274,16 +307,26 @@ class GlodapVector(TargetVector):
 		return vector
 
 class CM2p6Vector(TargetVector):
-	def __init__(self,variable,variance='time',**kwds):
+	def __init__(self,**kwds):
 		super(CM2p6Vector,self).__init__(**kwds)
-		file_path = './data/cm2p6_vector_'+str(variable)+'_'+str(variance)+'_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		self.title = ''
+		self.cm_dict = {'surf_o2':cm.BrBG,'surf_dic':cm.PRGn,\
+		'surf_pco2':cm.PiYG,'100m_dic':cm.PRGn,'100m_o2':cm.BrBG\
+		}	
+		file_path = './data/cm2p6_vector_tranlation_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		self.unit_dict = {'surf_o2':'mol kg$^{-1}$','surf_dic':'mol m$^{-2}$ s$^{-1}$',\
+		'surf_pco2':'$\mu$ atm','100m_dic':'mol m$^{-2}$','100m_o2':'mol m$^{-2}$'\
+		}
+		self.file_dictionary = 	{'surf_o2':'../subsampled_o2_surf.npy','surf_dic':'../subsampled_dic_surf.npy',\
+		'surf_pco2':'../subsampled_pco2_surf.npy','100m_dic':'../subsampled_dic_100m.npy','100m_o2':'../subsampled_o2_100m.npy'\
+		}	
 		try:
-			self.vector = self.load_vector(file_path)
+			self.translation = np.load(file_path)
 		except IOError:
-			print 'cm2p6 file not found, recompiling'
-			self.vector = self.compile_vector(variable,variance,file_path)
+			self.translation_list_construct()
+			np.save(file_path,self.translation_list)
 
-	def compile_vector(self,variable,variance,save_file):	
+	def translation_list_construct(self):	
 		self.lat_list = np.load(self.base_file+'../lat_list.npy')
 		lon_list = np.load(self.base_file+'../lon_list.npy')
 		lon_list[lon_list<-180]=lon_list[lon_list<-180]+360
@@ -305,21 +348,76 @@ class CM2p6Vector(TargetVector):
 			assert t[0]
 			assert len(t[0])==1
 			self.translation_list.append(t[0][0])
-		if variable == 'o2':
-			data = np.load(self.base_file+'../subsampled_o2.npy') 
-		elif variable == 'pco2':
-			data = np.load(self.base_file+'../subsampled_pco2.npy') 
-		elif variable == 'hybrid':
-			data_o2 = np.load(self.base_file+'../subsampled_o2.npy') 
-			data_pco2 = np.load(self.base_file+'../subsampled_pco2.npy') 
-			data = (data_o2+data_pco2)/2
-		else:
-			raise
-		if variance=='time':
-			vector = data.var(axis=0)[self.translation_list]
-		else: 
+
+	def plot_setup(self,variable,plot_range_dict):
+		self.vmin,self.vmax = plot_range_dict[variable]
+		self.cm = self.cm_dict[variable]
+
+class CM2p6VectorSpatialGradient(CM2p6Vector):	
+	def __init__(self,variable,**kwds):
+		super(CM2p6VectorSpatialGradient,self).__init__(**kwds)
+		file_path = './data/cm2p6_vector_'+str(variable)+'_space_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		self.unit = self.unit_dict[variable]+' m$^{-1}$'
+		try:
+			self.vector = self.load_vector(file_path)
+		except IOError:
+			print 'cm2p6 file not found, recompiling'
+			data = self.data_return(variable)
 			data = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.list,data.mean(axis=0)[self.translation_list])
-			data = gradient_calc(data)
-			vector = plottable_to_transition_vector(self.bins_lat,self.bins_lon,self.list,data)
-		np.save(save_file,vector)
-		return vector
+			data = self.gradient_calc(data)
+			self.vector = plottable_to_transition_vector(self.bins_lat,self.bins_lon,self.list,data)
+			np.save(file_path,self.vector)
+		plot_range_dict = {'surf_o2':(0,10**-6),'surf_dic':(10**-6,10**-5),\
+		'surf_pco2':(10**-4,10**-5),'100m_dic':(2*10**-5,5*10**-6),'100m_o2':(2*10**-5,10**-6)\
+		}	
+		self.plot_setup(variable,plot_range_dict)
+
+class CM2p6VectorTemporalVariance(CM2p6Vector):	
+	def __init__(self,variable,**kwds):
+		super(CM2p6VectorTemporalVariance,self).__init__(**kwds)
+		file_path = './data/cm2p6_vector_'+str(variable)+'_time_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+		self.unit = '('+self.unit_dict[variable]+')$^2$'
+		try:
+			self.vector = self.load_vector(file_path)
+		except IOError:
+			print 'cm2p6 file not found, recompiling'
+			data = self.data_return(variable)
+			self.vector = data.var(axis=0)[self.translation_list]
+			np.save(file_path,self.vector)
+		plot_range_dict = {'surf_o2':(0,3*10**-10),'surf_dic':(0,10**-14),\
+		'surf_pco2':(200,1200),'100m_dic':(0,12),'100m_o2':(0,2)\
+		}	
+		self.plot_setup(variable,plot_range_dict)
+
+class CM2p6VectorMean(CM2p6Vector):	
+	def __init__(self,variable,**kwds):
+		super(CM2p6VectorMean,self).__init__(**kwds)
+		
+		self.unit = self.unit_dict[variable]
+		file_path = './data/cm2p6_vector_'+str(variable)+'_mean_'+str(self.degree_bins[0])+'_'+str(self.degree_bins[1])
+
+		try:
+			self.vector = self.load_vector(file_path)
+		except IOError:
+			print 'cm2p6 file not found, recompiling'
+			data = self.data_return(variable)
+			self.vector = data.mean(axis=0)[self.translation_list]
+			np.save(file_path,self.vector)
+		plot_range_dict = {'surf_o2':(10,37),'surf_dic':(0,10**-7),\
+		'surf_pco2':(200,400),'100m_dic':(195,225),'100m_o2':(15,35)\
+		}	
+		self.plot_setup(variable,plot_range_dict)
+
+def plot_all_correlations():
+	trans_plot = TransitionPlot()
+	trans_plot.get_direction_matrix()
+	for name,corr_class in [('CM2p6',CM2p6Correlation)]:
+		for variable in ['o2','pco2','hybrid']:
+			try:
+				dummy_class = corr_class(transition_plot=trans_plot,variable=variable)
+				m = dummy_class.plot()
+				plt.title(name+' '+variable+' '+'correlation')
+				plt.savefig('../../plots/'+name+'_'+variable+'_'+'correlation')
+				plt.close()
+			except AttributeError:
+				pass

@@ -42,11 +42,12 @@ class Float(object):
 		assert (float_vector<=1).all()
 		self.vector = float_vector	
 
-	def look_at_data(self):
-		XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)    
-		plottable = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.index_list,self.vector)
-		m.pcolormesh(XX,YY,plottable)
-		plt.show()
+	def plot(self,m=False):
+		if not m:
+			XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
+		y,x = zip(*[self.list[x] for x in np.where(self.vector)[0].tolist()])
+		m.scatter(x,y,marker='*',color='b',s=34,latlon=True)
+		return m
 
 class Argo(Float):
 	def __init__(self,age_return=False,**kwds):

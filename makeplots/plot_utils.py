@@ -2,6 +2,14 @@ from mpl_toolkits.basemap import Basemap
 import pyproj
 from matplotlib.patches import Polygon
 import numpy as np
+import sys,os
+try:
+    inverse_plot_dir = os.path.dirname(os.path.realpath(__file__))
+except NameError:
+    inverse_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
+sys.path.append(os.path.normpath(os.path.join(inverse_plot_dir, '../')))
+sys.path.append(os.path.normpath(os.path.join(inverse_plot_dir, '../compute')))
+from compute_utils import find_nearest
 
 class TBasemap(Basemap):
 	def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
@@ -82,6 +90,8 @@ def basemap_setup(lat_grid,lon_grid,traj_type):
 		m = TBasemap(projection='cea',llcrnrlon=20.,llcrnrlat=30,urcrnrlon=30,urcrnrlat=40,fix_aspect=False)
 	# m.fillcontinents(color='coral',lake_color='aqua')
 	m.drawcoastlines()
+	m.drawmapboundary(fill_color='darkgray')
+	m.fillcontinents(color='dimgray',lake_color='darkgray')
 	XX,YY = m(X,Y)
 	return XX,YY,m
 
@@ -100,5 +110,5 @@ def plottable_to_transition_vector(lat_grid,lon_grid,index_list,plottable):
 		assert abs(lon_grid[lon_index]-lon)<2
 		lat_index = lat_grid.index(find_nearest(lat_grid,lat))
 		assert abs(lat_grid[lat_index]-lat)<2
-		vector[n] = data[lat_index,lon_index]
+		vector[n] = plottable[lat_index,lon_index]
 	return vector
