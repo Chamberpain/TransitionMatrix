@@ -90,7 +90,6 @@ class CM2p6Correlation(TargetCorrelation):
 			self.matrix = self.load_corr(corr_file_path)
 		except IOError:
 
-
 			print corr_file_path
 			print 'cm2p6 file not found, recompiling'
 			self.matrix = self.compile_corr(variable,corr_file_path)
