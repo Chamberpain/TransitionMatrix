@@ -27,7 +27,8 @@ class InversionPlot(TransitionPlot):
         """ accepts a target vecotr in sparse matrix form, returns the ideal float locations and weights to sample that"""
         vector = self.normalize_vector(vector,vector_exploration_factor)
         vector = self.remove_float_observations(vector)
-        self.normalize_correlation(corr_exploration_factor)
+        if corr_exploration_factor:
+            self.normalize_correlation(corr_exploration_factor)
         print 'I am starting the optimization'
         optimize_fun = scipy.optimize.lsq_linear(self.correlation.matrix.dot(self.transition_matrix),\
             np.squeeze(vector),bounds=(0,1.2),verbose=2,max_iter=20)
@@ -52,7 +53,7 @@ class InversionPlot(TransitionPlot):
         scale = scale*np.random.random(scale.shape)
         self.correlation.matrix+=scale
         self.correlation.matrix = scipy.sparse.csc_matrix(self.correlation.matrix)
-        self.correlation.matrix = self.rescale_matrix(self.correlation.matrix)
+        self.correlation.matrix = self.rescale_matrix(self.correlation.matrix,checksum=False)
 
     def instrument_to_observation(self,vector):
         return (self.correlation.matrix.dot(self.transition_matrix)).dot(vector)
@@ -102,7 +103,7 @@ class InversionPlot(TransitionPlot):
 trans_plot = TransitionPlot()
 trans_plot.get_direction_matrix()
 factor_list = [0,2,5,10]
-for corr_factor in factor_list:
+for corr_factor in factor_list[-2:]:
     for vector_factor in factor_list:
         for variance in ['spatial','time','mean']:
             for variable in ['surf_o2','surf_dic','surf_pco2','100m_dic','100m_o2']:

@@ -404,7 +404,8 @@ class TransMatrix(Transition):
         mat_sum = matrix_.todense().sum(axis=0)
         scalefactor,dummy = np.meshgrid(1/mat_sum,1/mat_sum)
         matrix_ = scipy.sparse.csc_matrix(np.array(matrix_.todense())*np.array(scalefactor)) #must make these arrays so that the multiplication is element wise
-        assert (np.abs(matrix_.sum(axis=0)-1)<checksum).all()
+        if checksum:
+            assert (np.abs(matrix_.sum(axis=0)-1)<checksum).all()
         return matrix_
 
     # def delete_w(self):
