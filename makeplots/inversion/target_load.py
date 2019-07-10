@@ -94,7 +94,7 @@ class CM2p6Correlation(TargetCorrelation):
 			print 'cm2p6 file not found, recompiling'
 			self.matrix = self.compile_corr(variable,corr_file_path)
 
-		self.scale_direction()
+		# self.scale_direction()
 
 	def translation_list_construct(self):
 		self.lat_list = np.load(self.base_file+'../lat_list.npy')
