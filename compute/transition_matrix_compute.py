@@ -11,7 +11,7 @@ from sets import Set
 from compute_utils import find_nearest,save_sparse_csc,load_sparse_csc
 
 class BaseInfo(object):
-    def __init__(self,degree_bin_lat=2,degree_bin_lon=2,date_span_limit=60,traj_file_type='Argo',float_type=None,season=None):
+    def __init__(self,degree_bin_lat=2,degree_bin_lon=3,date_span_limit=60,traj_file_type='Argo',float_type=None,season=None):
         self.season = season
         self.float_type=float_type
         self.traj_file_type = traj_file_type
@@ -83,9 +83,28 @@ class Transition(Trajectory):
         dataframe = dataframe.dropna(subset=['start bin']) 
         assert ~dataframe['start bin'].isnull().any()
         assert ~dataframe[self.end_bin_string].isnull().any()
-        dataframe = dataframe[dataframe['start bin'].isin(dataframe[self.end_bin_string].unique())]
-        token = dataframe[dataframe[self.end_bin_string]!=dataframe['start bin']].drop_duplicates().groupby(self.end_bin_string).count() 
-        total_list = [list(x) for x in token[token['start bin']>0].index.unique().values.tolist()] # this will make a unique "total list" for every transition matrix, but is necessary so that we dont get "holes" in the transition matrix
+        cruise_token = ['']
+        test = ['']
+        while (len(cruise_token)>0)|(len(test)>0):
+            dataframe = dataframe[dataframe['start bin'].isin(dataframe[self.end_bin_string].unique())]
+            cruise_token = dataframe.drop_duplicates(subset=['Cruise','start bin']).groupby('start bin').count()
+            cruise_token = cruise_token[cruise_token.Cruise<2]
+# if there is only one float in a grid cell
+            if len(cruise_token)>0:
+                print 'removing cruises where it passes through one grid cell'
+                cruise_remove_list = dataframe[dataframe['start bin'].isin(cruise_token.index.values)].Cruise.unique()
+                print 'removing '+str(len(cruise_remove_list))+' cruises'
+                dataframe = dataframe[~dataframe.Cruise.isin(cruise_remove_list)]
+#then remove it...
+            bin_token = dataframe[dataframe[self.end_bin_string]!=dataframe['start bin']].drop_duplicates().groupby(self.end_bin_string).count() 
+            test = bin_token[bin_token['start bin']==0]
+            if len(test)>0:
+                print 'removing bins that dont have a match'
+                bin_token = bin_token[bin_token['start bin']>0]
+                total_list = [list(x) for x in bin_token.index.unique().values.tolist()] # this will make a unique "total list" for every transition matrix, but is necessary so that we dont get "holes" in the transition matrix
+                dataframe = dataframe[dataframe[self.end_bin_string].isin([tuple(x) for x in total_list])]
+
+        total_list = [list(x) for x in bin_token.index.unique().values.tolist()] # this will make a unique "total list" for every transition matrix, but is necessary so that we dont get "holes" in the transition matrix
         dataframe = dataframe[dataframe[self.end_bin_string].isin([tuple(x) for x in total_list])]
         print 'Transition dataframe passed all necessary tests'
         self.df = dataframe
