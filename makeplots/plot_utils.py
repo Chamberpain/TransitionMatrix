@@ -1,102 +1,52 @@
-from mpl_toolkits.basemap import Basemap
-import pyproj
-from matplotlib.patches import Polygon
+from __future__ import print_function
 import numpy as np
-import sys,os
-try:
-    inverse_plot_dir = os.path.dirname(os.path.realpath(__file__))
-except NameError:
-    inverse_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
-sys.path.append(os.path.normpath(os.path.join(inverse_plot_dir, '../')))
-sys.path.append(os.path.normpath(os.path.join(inverse_plot_dir, '../compute')))
-from compute_utils import find_nearest
+from plot_utilities.eulerian_plot import Basemap
+from compute_utilities.list_utilities import find_nearest
 
-class TBasemap(Basemap):
-	def ellipse(self, x0, y0, a, b, n, phi=0, ax=None, **kwargs):
-		"""
-		Draws a polygon centered at ``x0, y0``. The polygon approximates an
-		ellipse on the surface of the Earth with semi-major-axis ``a`` and 
-		semi-minor axis ``b`` degrees longitude and latitude, made up of 
-		``n`` vertices.
-
-		For a description of the properties of ellipsis, please refer to [1].
-		
-		The polygon is based upon code written do plot Tissot's indicatrix
-		found on the matplotlib mailing list at [2].
-		Extra keyword ``ax`` can be used to override the default axis instance.
-
-		Other \**kwargs passed on to matplotlib.patches.Polygon
-
-		RETURNS
-			poly : a maptplotlib.patches.Polygon object.
-
-		REFERENCES
-			[1] : http://en.wikipedia.org/wiki/Ellipse
-		"""
-		ax = kwargs.pop('ax', None) or self._check_ax()
-		g = pyproj.Geod(a=self.rmajor, b=self.rminor)
-		# Gets forward and back azimuths, plus distances between initial
-		# points (x0, y0)
-		azf, azb, dist = g.inv([x0, x0], [y0, y0], [x0+a, x0], [y0, y0+b])
-		tsid = dist[0] * dist[1] # a * b
-
-		# Initializes list of segments, calculates \del azimuth, and goes on 
-		# for every vertex
-		seg = []
-		AZ = np.linspace(azf[0], 360. + azf[0], n)
-		for i, az in enumerate(AZ):
-			# Skips segments along equator (Geod can't handle equatorial arcs).
-			if np.allclose(0., y0) and (np.allclose(90., az) or
-				np.allclose(270., az)):
-				continue
-			# In polar coordinates, with the origin at the center of the 
-			# ellipse and with the angular coordinate ``az`` measured from the
-			# major axis, the ellipse's equation  is [1]:
-			#
-			#                           a * b
-			# r(az) = ------------------------------------------
-			#         ((b * cos(az))**2 + (a * sin(az))**2)**0.5
-			#
-			# Azymuth angle in radial coordinates and corrected for reference
-			# angle.
-			azr = 2. * np.pi / 360. * (phi+az + 90.)
-			A = dist[0] * np.sin(azr)
-			B = dist[1] * np.cos(azr)
-			r = tsid / (B**2. + A**2.)**0.5
-			lon, lat, azb = g.fwd(x0, y0, az, r)
-			x, y = self(lon, lat)
-
-			# Add segment if it is in the map projection region.
-			if x < 1e20 and y < 1e20:
-				seg.append((x, y))
-		# print seg
-		poly = Polygon(seg, **kwargs)
-		ax.add_patch(poly)
-
-		# Set axes limits to fit map region.
-		self.set_axes_limits(ax=ax)
-		return poly
-
-def basemap_setup(lat_grid,lon_grid,traj_type):
+def basemap_setup(lat_grid,lon_grid,traj_type,fill_color=True):
 	X,Y = np.meshgrid(lon_grid,lat_grid)
 	if traj_type == 'SOSE':
-		print 'I am plotting antarctic region'
-		m = TBasemap(llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=-25,projection='cea',fix_aspect=False)
-	elif traj_type == 'Argo':
-		print 'I am plotting global region'
-		m = TBasemap(projection='cea',llcrnrlon=-180.,llcrnrlat=-80.,urcrnrlon=180.,urcrnrlat=80,fix_aspect=False)
+		print('I am plotting antarctic region')
+		lon_0 = 0
+		llcrnrlon=-180.
+		llcrnrlat=-80.
+		urcrnrlon=180.
+		urcrnrlat=-25
+		m = Basemap.auto_map(urcrnrlat,llcrnrlat,urcrnrlon,llcrnrlon,lon_0,aspect=True)
 	elif traj_type == 'Crete':
-		print 'I am plotting Crete'
-		m = TBasemap(projection='cea',llcrnrlon=20.,llcrnrlat=30,urcrnrlon=30,urcrnrlat=40,fix_aspect=False)
-	# m.fillcontinents(color='coral',lake_color='aqua')
-	m.drawcoastlines()
-	m.drawmapboundary(fill_color='darkgray')
-	m.fillcontinents(color='dimgray',lake_color='darkgray')
+		print('I am plotting Crete')
+		lon_0 = 0
+		llcrnrlon=20.
+		llcrnrlat=30
+		urcrnrlon=30
+		urcrnrlat=40
+		m = Basemap.auto_map(urcrnrlat,llcrnrlat,urcrnrlon,llcrnrlon,lon_0,aspect=False,resolution='h')
+	elif traj_type == 'Moby':
+		print('I am plotting Moby')
+		lon_0 = 0
+		center_lat = 20.8
+		center_lon = -157.2
+		llcrnrlon=(center_lon-2)
+		llcrnrlat=(center_lat-2)
+		urcrnrlon=(center_lon+2)
+		urcrnrlat=(center_lat+2)
+		m = Basemap.auto_map(urcrnrlat,llcrnrlat,urcrnrlon,llcrnrlon,lon_0,aspect=False,resolution='h')
+		m.scatter(center_lon,center_lat,500,marker='*',color='Red',latlon=True,zorder=10)
+	else:
+		print('I am plotting global region')
+		lon_0 = 0
+		llcrnrlon=-180.
+		llcrnrlat=-80.
+		urcrnrlon=180.
+		urcrnrlat=80
+		m = Basemap.auto_map(urcrnrlat,llcrnrlat,urcrnrlon,llcrnrlon,lon_0,aspect=False)
+
 	XX,YY = m(X,Y)
 	return XX,YY,m
 
 def transition_vector_to_plottable(lat_grid,lon_grid,index_list,vector):
 	plottable = np.zeros([len(lon_grid),len(lat_grid)])
+	plottable = np.ma.masked_equal(plottable,0)
 	for n,tup in enumerate(index_list):
 		ii_index = lon_grid.index(tup[1])
 		qq_index = lat_grid.index(tup[0])

@@ -1,101 +1,156 @@
+from __future__ import print_function
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from plot_utils import basemap_setup,transition_vector_to_plottable
-import matplotlib.pyplot as plt
+from transition_matrix.makeplots.plot_utils import basemap_setup,transition_vector_to_plottable,plottable_to_transition_vector
 import os, sys
 import datetime
-# get an absolute path to the directory that contains mypackage
-try:
-    make_plot_dir = os.path.dirname(os.path.realpath(__file__))
-except NameError:
-    make_plot_dir = os.path.dirname(os.path.join(os.getcwd(),'dummy'))
-sys.path.append(os.path.normpath(os.path.join(make_plot_dir, '../compute/')))
-from transition_matrix_compute import Transition
+from scipy.sparse.base import isspmatrix
+import scipy.sparse
+from transition_matrix.compute.trans_read import BaseMat
 
 
-class Float(object):
-	def __init__(self,transition_plot,**kwds):
-		self.bins_lat = transition_plot.bins_lat
-		self.bins_lon = transition_plot.bins_lon
-		self.list = transition_plot.list
-		self.base_file = transition_plot.base_file
+class Float(scipy.sparse.csc_matrix):
+	traj_file_type = 'float'
+	marker_color = 'm'
+	marker_size = 15
 
-	def reshape_float_vector(self,age_return):
-		self.df['bins_lat'] = pd.cut(self.df.Lat,bins = self.bins_lat,labels=self.bins_lat[:-1])
-		self.df['bins_lon'] = pd.cut(self.df.Lon,bins = self.bins_lon,labels=self.bins_lon[:-1])
-		self.df['bin_index'] = zip(self.df['bins_lat'].values,self.df['bins_lon'].values)
-		float_vector = np.zeros(len(self.list))
-		for x,age in self.df[['bin_index','Age']].values:
+	def __init__(self,arg,shape=None,df=pd.DataFrame({'latitude':[],'longitude':[]}),degree_bins=None,total_list=None):
+		super(Float,self).__init__(arg, shape=shape)
+		self.degree_bins = degree_bins
+		self.total_list = total_list
+		self.df = df
+
+	@ staticmethod
+	def return_float_vector(degree_bins,df,total_list):
+		bins_lat,bins_lon = BaseMat.bins_generator(degree_bins)
+		df['bins_lat'] = pd.cut(df.latitude,bins = bins_lat,labels=bins_lat[:-1])
+		df['bins_lon'] = pd.cut(df.longitude,bins = bins_lon,labels=bins_lon[:-1])
+		df['bin_index'] = zip(df['bins_lat'].values,df['bins_lon'].values)
+		float_vector = np.zeros((len(total_list),1))
+		row_idx = []
+		data = []
+		for x in df.groupby(['bin_index']).count().Cruise.iteritems():
 			try:
-				idx = self.list.index(list(x))
+				row_idx.append(total_list.tolist().index(list(x[0])))
 # this is terrible notation, but it finds the index in the index list of the touple bins_lat, bins_lon
-				if age_return:
-					percent = 1/np.ceil(age)
-					if percent < 1/6.:
-						percent = 0
-					float_vector[idx] = percent
-				else:
-					float_vector[idx] = 1
-			except ValueError:
-				print str(x)+' is not found'
-		assert (float_vector<=1).all()
-		self.vector = float_vector	
 
-	def plot(self,m=False):
+				data.append(x[1])
+			except ValueError:
+				print(str(x)+' is not found')
+		col_idx = [0]*len(row_idx)
+		arg1 = (data,(row_idx,col_idx))
+		shape = (len(total_list),1)
+		return (arg1,shape)
+
+	def __setitem__(self, index, x):
+		# Process arrays from IndexMixin
+		i, j = self._unpack_index(index)
+		i, j = self._index_to_arrays(i, j)
+
+		if isspmatrix(x):
+			broadcast_row = x.shape[0] == 1 and i.shape[0] != 1
+			broadcast_col = x.shape[1] == 1 and i.shape[1] != 1
+			if not ((broadcast_row or x.shape[0] == i.shape[0]) and
+					(broadcast_col or x.shape[1] == i.shape[1])):
+				raise ValueError("shape mismatch in assignment")
+
+			# clear entries that will be overwritten
+			ci, cj = self._swap((i.ravel(), j.ravel()))
+			self._zero_many(ci, cj)
+
+			x = x.tocoo(copy=True)
+			x.sum_duplicates()
+			r, c = x.row, x.col
+			x = np.asarray(x.data, dtype=self.dtype)
+			if broadcast_row:
+				r = np.repeat(np.arange(i.shape[0]), len(r))
+				c = np.tile(c, i.shape[0])
+				x = np.tile(x, i.shape[0])
+			if broadcast_col:
+				r = np.repeat(r, i.shape[1])
+				c = np.tile(np.arange(i.shape[1]), len(c))
+				x = np.repeat(x, i.shape[1])
+			# only assign entries in the new sparsity structure
+			i = i[r, c]
+			j = j[r, c]
+		else:
+			# Make x and i into the same shape
+			x = np.asarray(x, dtype=self.dtype)
+			x, _ = np.broadcast_arrays(x, i)
+
+			if x.shape != i.shape:
+				raise ValueError("shape mismatch in assignment")
+
+		if np.size(x) == 0:
+			return
+		i, j = self._swap((i.ravel(), j.ravel()))
+		self._set_many(i, j, x.ravel())
+		lat,lon = self.total_list[index]
+		for _ in range(x):
+			self.df = pd.concat([self.df,pd.DataFrame({'latitude':[lat],'longitude':[lon]})])
+
+	def scatter_plot(self,m=False):
 		if not m:
-			XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
-		y,x = zip(*[self.list[x] for x in np.where(self.vector)[0].tolist()])
-		m.scatter(x,y,marker='*',color='b',s=34,latlon=True)
+			(bins_lat,bins_lon)=BaseMat.bins_generator(self.degree_bins)
+			XX,YY,m = basemap_setup(bins_lat,bins_lon,self.traj_file_type)  
+		y = self.df.latitude.tolist()
+		x = self.df.longitude.tolist()
+		m.scatter(x,y,marker='*',color=self.marker_color,s=self.marker_size,latlon=True)
 		return m
 
+	def grid_plot(self,m=False):
+		(bins_lat,bins_lon)=BaseMat.bins_generator(self.degree_bins)
+		if not m:	
+			XX,YY,m = basemap_setup(bins_lat,bins_lon,self.traj_file_type)
+		plottable = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(self.todense()).ravel())
+		plottable = np.ma.masked_equal(plottable,0)
+		m.pcolormesh(XX,YY,plottable,vmin=0,vmax=min(100,self.data.max()))
+
+
+	def get_age(self):
+		age = np.ceil((df.date.max()-df.date).dt.days/360.).array
+		self.df.loc[df_.Age<1,'Age'] = 1
+
+	@staticmethod
+	def get_recent_df():
+		from argo_traj_box.argo_traj_box_utils import load_df
+		import datetime
+		df = load_df()
+		recent_df = df[df.date>(df.date.max()-datetime.timedelta(days=60))]
+		recent_df = recent_df.drop_duplicates(subset=['Cruise'],keep='last')
+		return recent_df
+
+
 class Argo(Float):
-	def __init__(self,age_return=False,**kwds):
-		super(Argo,self).__init__(**kwds)
-		file_ = '../../argo_traj_box/ar_index_global_prof.txt'
-		df_ = pd.read_csv(file_,skiprows=8)
-		cruise_list = []
-		for item in df_['file'].iteritems():
-			try:
-				cruise_list.append(item[1].split('/')[1])
-			except IndexError:
-				cruise_list.append(np.nan)
-		df_['Cruise']=cruise_list
-		df_ = df_[~df_[['date','Cruise']].isna().any(axis=1)]
-		df_['Date'] = pd.to_datetime([int(_) for _ in df_.date.values.tolist()],format='%Y%m%d%H%M%S')
-		df_['Lat'] = df_['latitude']
-		df_['Lon'] = df_['longitude']
-		df_ = df_[['Lat','Lon','Date','Cruise']]
-		active_floats = df_[df_.Date>(df_.Date.max()-relativedelta(months=6))].Cruise.unique()
-		df_ = df_[df_.Cruise.isin(active_floats)]
-		df_ = df_.drop_duplicates(subset='Cruise',keep='first')
-		df_['Age'] = np.ceil((df_.Date.max()-df_.Date).dt.days/360.)
-		df_.loc[df_.Age<1,'Age'] = 1
-		self.df = df_
-		self.reshape_float_vector(age_return)
+	traj_file_type = 'argo'
+	marker_color = 'r'
+	marker_size = 5
+	variables = ['temp','salt']
+	def __init__(self,arg,**kwds):		
+		super(Argo,self).__init__(arg,**kwds)
+
+
+	@staticmethod
+	def recent_floats(degree_bins,total_list):	
+		df = Float.get_recent_df()
+		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
+		return Argo(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+
 
 class SOCCOM(Float):
-	def __init__(self,age_return=False,**kwds):
-		super(SOCCOM,self).__init__(**kwds)
-		path = self.base_file+'../SOCCOM_trajectory/'
-		files = []
-		# r=root, d=directories, f = files
-		for r, d, f in os.walk(path):
-			for file in f:
-				if '.txt' in file:
-					files.append(os.path.join(r, file))
-		df_list = []
-		for file in files:
-			pd.read_csv(file)
-			df_holder = pd.read_csv(file,skiprows=[1,2,3],delim_whitespace=True,usecols=['Float_ID','Cycle','Date','Time','Lat','Lon','POS_QC','#'])
-			df_holder.columns = ['Float_ID','Cycle','Date','Time','Lat','Lon','POS_QC','Cruise'] 
-			df_holder['Date'] = pd.to_datetime(df_holder['Date'],format='%Y%m%d')
-			df_holder = df_holder[df_holder.POS_QC.isin([0,1])]
-			if (datetime.datetime.today()-df_holder.Date.tail(1)).dt.days.values[0]>270:
-				print 'Float is dead, rejecting'
-				continue
-			df_token = df_holder[['Lat','Lon']].tail(1)
-			df_token['Age'] = ((df_holder.Date.tail(1)-df_holder.Date.head(1).values).dt.days/365).values[0]
-			df_list.append(df_token)
-		self.df = pd.concat(df_list)
-		self.reshape_float_vector(age_return)
+	traj_file_type = 'argo'	
+	marker_color = 'm'
+	marker_size = 20
+	variables = ['temp','salt','dic','o2']
+	def __init__(self,arg,**kwds):	
+		super(SOCCOM,self).__init__(arg,**kwds)
+
+
+	@staticmethod
+	def recent_floats(degree_bins,total_list):
+		df = Float.get_recent_df()
+		df = df[df['SOCCOM']]
+		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
+		return SOCCOM(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+

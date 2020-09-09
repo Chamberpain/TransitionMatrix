@@ -1,3 +1,6 @@
+import matplotlib.pyplot as plt
+
+
 def resolution_difference_plot():
     with open('transition_matrix_resolution_comparison.pickle','rb') as fp:
         datalist = pickle.load(fp)
@@ -88,7 +91,8 @@ def data_withholding_plot():
 
     with open('transition_matrix_withholding_data.pickle', 'rb') as fp:
         datalist = pickle.load(fp)
-    token,percentage,actual_data = zip(*datalist)
+    percentage,actual_data = zip(*datalist)
+    token = [(2,3)]*len(percentage)
     token = [str(x) for x in token]
     token = np.array(token)
     percentage = np.array(percentage)

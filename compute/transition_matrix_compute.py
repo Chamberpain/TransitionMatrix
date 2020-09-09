@@ -9,6 +9,7 @@ import random
 import copy
 from sets import Set
 from compute_utils import find_nearest,save_sparse_csc,load_sparse_csc
+import json 
 
 class BaseInfo(object):
     def __init__(self,degree_bin_lat=2,degree_bin_lon=3,date_span_limit=60,traj_file_type='Argo',float_type=None,season=None):
@@ -72,7 +73,7 @@ class Transition(Trajectory):
             print 'i could not load the transition df, I am recompiling with degree step size', self.degree_bins,''
             print 'file was '+self.base_file+'transition_df_degree_bins_'\
                 +str(self.degree_bins[0])+'_'+str(self.degree_bins[1])+'.pickle'
-            self.recompile_df(traj.df)
+            self.recompile_df(self.df)
 
     def load_df_and_list(self,dataframe,float_type=None,season=None):
         if float_type:
@@ -426,6 +427,28 @@ class TransMatrix(Transition):
         if checksum:
             assert (np.abs(matrix_.sum(axis=0)-1)<checksum).all()
         return matrix_
+
+    def save_trans_matrix_to_json(self,foldername):
+        for column in range(self.transition_matrix.shape[1]):
+            print 'there are ',(self.transition_matrix.shape[0]-column),'columns remaining'
+            p_lat,p_lon = tuple(self.list[column])
+            data = self.transition_matrix[:,column].data
+            lat,lon = zip(*[tuple(self.list[x]) for x in self.transition_matrix[:,column].indices.tolist()])
+            feature_list = zip(lat,lon,data)
+            geojson = {'type':'FeatureCollection', 'features':[]}
+            for token in feature_list:
+                lat,lon,prob = token
+                feature = {'type':'Feature',
+                            'properties':{},
+                            'geometry':{'type':'Point',
+                            'coordinates':[]}}
+                feature['geometry']['coordinates'] = [lon,lat]
+                feature['properties']['Probability'] = prob
+                geojson['features'].append(feature)
+            output_filename = './'+str(foldername)+'/lat_'+str(p_lat)+'_lon_'+str(p_lon)+'.js'
+            with open(output_filename,'wb') as output_file:
+                output_file.write('var dataset = ')
+                json.dump(geojson, output_file, indent=2) 
 
     # def delete_w(self):
     #   """
