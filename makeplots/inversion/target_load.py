@@ -146,15 +146,15 @@ class HInstance(scipy.sparse.csc_matrix):
 					assert len(data_list)==len(row_list)
 		return HInstance((data_list,(row_list,col_list)),shape = (len(new_total_list)*len(variable_list),max(col_list)+1))
 
-    @ staticmethod
-    def generate_from_float_class(float_class_list,variable_list=None):
-        locations = []
-        for float_class in float_class_list:
-                lat = float_class.df.latitude.tolist()
-                lon = float_class.df.longitude.tolist()
-                for var in float_class.variables:
-                        locations += zip(lat,lon,[var]*len(lat))
-        return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
+	@ staticmethod
+	def generate_from_float_class(float_class_list,variable_list=None):
+		locations = []
+		for float_class in float_class_list:
+				lat = float_class.df.latitude.tolist()
+				lon = float_class.df.longitude.tolist()
+				for var in float_class.variables:
+						locations += zip(lat,lon,[var]*len(lat))
+		return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
 
 
 	@ staticmethod
@@ -192,6 +192,7 @@ class HInstance(scipy.sparse.csc_matrix):
 		return HInstance(H,H.shape)
 
 def plot_all_covariance():
+""" There might be a problem with this because the cov in the lower triangular matrix might be transposed, need to ask bruce"""
 	cov = InverseInstance.load_from_type(2,2,300,'covariance')
 	for var1 in cov.variable_list:
 		for var2 in cov.variable_list:
@@ -199,39 +200,39 @@ def plot_all_covariance():
 			cov_instance.plot_variance()
 
 def plot_example_variance_constrained():
-        invinst = InverseInstance.load_from_type(2,2,300) 
-        lat,lon = zip(*random.sample(invinst.total_list,300)) 
-        locations = zip(lat,lon,['dic']*len(lat))
-        hinstance = HInstance.generate_from_locations(locations,invinst.total_list,['temp'],invinst.degree_bins)
-        cov = invinst.get_cov('dic','dic')
-        output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
-        noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
-        denom = hinstance.dot(cov).dot(hinstance.T)+noise
-        denom = scipy.sparse.csc_matrix(denom)
-        inv_denom = scipy.sparse.linalg.inv(denom)
-        cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
-        p_hat = cov-cov_subtract        
+		invinst = InverseInstance.load_from_type(2,2,300) 
+		lat,lon = zip(*random.sample(invinst.total_list,300)) 
+		locations = zip(lat,lon,['dic']*len(lat))
+		hinstance = HInstance.generate_from_locations(locations,invinst.total_list,['temp'],invinst.degree_bins)
+		cov = invinst.get_cov('dic','dic')
+		output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
+		noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
+		denom = hinstance.dot(cov).dot(hinstance.T)+noise
+		denom = scipy.sparse.csc_matrix(denom)
+		inv_denom = scipy.sparse.linalg.inv(denom)
+		cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
+		p_hat = cov-cov_subtract        
 
-        def plot_data(data):
-                (bins_lat,bins_lon)=BaseMat.bins_generator(cov.degree_bins)
-                plottable = transition_vector_to_plottable(bins_lat,bins_lon,invinst.total_list,data)
-                XX,YY,m = basemap_setup(bins_lat,bins_lon,'argo')  
-                # mean = p_hat.diagonal().mean()
-                # std = p_hat.diagonal().std()
-                m.pcolormesh(XX,YY,plottable)
-                return m 
-        m = plot_data(p_hat.diagonal())
-        plt.savefig(ROOT_DIR+'/plots/example_phat')
-        plt.close()
-        m = plot_data(cov_subtract.diagonal())
-        plt.savefig(ROOT_DIR+'/plots/example_cov_subtract')
-        plt.close()
-        eigs = scipy.sparse.linalg.eigs(p_hat)
-        for k in range(6):
-                dummy = eigs[1][:,k]
-                m=plot_data(dummy)
-                plt.savefig(ROOT_DIR+'/plots/example_evec'+str(k))
-                plt.close()
+		def plot_data(data):
+				(bins_lat,bins_lon)=BaseMat.bins_generator(cov.degree_bins)
+				plottable = transition_vector_to_plottable(bins_lat,bins_lon,invinst.total_list,data)
+				XX,YY,m = basemap_setup(bins_lat,bins_lon,'argo')  
+				# mean = p_hat.diagonal().mean()
+				# std = p_hat.diagonal().std()
+				m.pcolormesh(XX,YY,plottable)
+				return m 
+		m = plot_data(p_hat.diagonal())
+		plt.savefig(ROOT_DIR+'/plots/example_phat')
+		plt.close()
+		m = plot_data(cov_subtract.diagonal())
+		plt.savefig(ROOT_DIR+'/plots/example_cov_subtract')
+		plt.close()
+		eigs = scipy.sparse.linalg.eigs(p_hat)
+		for k in range(6):
+				dummy = eigs[1][:,k]
+				m=plot_data(dummy)
+				plt.savefig(ROOT_DIR+'/plots/example_evec'+str(k))
+				plt.close()
 
 def plot_array_variance_constrained():
 	base = ROOT_DIR+'/plots/cm2p6_covariance/'
@@ -252,29 +253,29 @@ def plot_array_variance_constrained():
 
 	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
 	zipper = zip(np.split(cov_subtract.diagonal(),4),np.split(cov.diagonal(),4),cov.variable_list)
-    var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
-    'o2': 'Oxygen ($mol\ m^{-2}$)'}
-    var2_dict = {'salt':'Salinity','dic':'DIC','temp':'Temperature','o2':'Oxygen'}
+	var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
+	'o2': 'Oxygen ($mol\ m^{-2}$)'}
+	var2_dict = {'salt':'Salinity','dic':'DIC','temp':'Temperature','o2':'Oxygen'}
 
-    for c,cs,var in zipper:
-            plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c)
-            plottable_mean = c[c!=0].mean()
-            plottable_std = c[c!=0].std()
-            XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
-            m.pcolormesh(XX,YY,plottable,vmax=(plottable_mean+2*plottable_std),vmin=(min(0,plottable_mean-2*plottable_std)))
-            plt.colorbar(label=var1_dict[var]+' Constrained Variance')
-            m = argo.scatter_plot(m=m)
-            m = soccom.scatter_plot(m=m)
-            plt.savefig(base+var+'_float_constrained_variance')
-            plt.close()
-            plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
-            XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
-            m.pcolormesh(XX,YY,plottable,vmax=100,vmin=0)
-            plt.colorbar(label=var2_dict[var]+' % Constrained Variance')
-            # m = argo.scatter_plot(m=m)
-            # m = soccom.scatter_plot(m=m)
-            plt.savefig(base+var+'_float_constrained_variance_percent')
-            plt.close()
+	for c,cs,var in zipper:
+			plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c)
+			plottable_mean = c[c!=0].mean()
+			plottable_std = c[c!=0].std()
+			XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
+			m.pcolormesh(XX,YY,plottable,vmax=(plottable_mean+2*plottable_std),vmin=(min(0,plottable_mean-2*plottable_std)))
+			plt.colorbar(label=var1_dict[var]+' Constrained Variance')
+			m = argo.scatter_plot(m=m)
+			m = soccom.scatter_plot(m=m)
+			plt.savefig(base+var+'_float_constrained_variance')
+			plt.close()
+			plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
+			XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
+			m.pcolormesh(XX,YY,plottable,vmax=100,vmin=0)
+			plt.colorbar(label=var2_dict[var]+' % Constrained Variance')
+			# m = argo.scatter_plot(m=m)
+			# m = soccom.scatter_plot(m=m)
+			plt.savefig(base+var+'_float_constrained_variance_percent')
+			plt.close()
 
 
 def targeted_array_plots():
@@ -428,24 +429,24 @@ def targeted_array_plots():
 	plt.close()				
 
 def argo_evolution_plot():
-    base = ROOT_DIR+'/plots/argo_evolution/'        
-    for k,days in enumerate([10,20,30,40,50,60,70,80,90,100,120,140,160,180]):
-            transmat = TransMat.load_from_type(1,1,days)
-            argo = Argo.recent_floats(transmat.degree_bins,transmat.total_list)
-            argo_holder = Argo(transmat.todense().dot(argo.todense()),degree_bins=transmat.degree_bins,total_list=transmat.total_list)
-            argo_holder.data = argo_holder.data*100 
-            argo_holder.grid_plot()
-            plt.colorbar(label='Probability (%)')
-            plt.title('Day '+str(days))
-            plt.savefig(base+str(k))
-            plt.close()
+	base = ROOT_DIR+'/plots/argo_evolution/'        
+	for k,days in enumerate([10,20,30,40,50,60,70,80,90,100,120,140,160,180]):
+			transmat = TransMat.load_from_type(1,1,days)
+			argo = Argo.recent_floats(transmat.degree_bins,transmat.total_list)
+			argo_holder = Argo(transmat.todense().dot(argo.todense()),degree_bins=transmat.degree_bins,total_list=transmat.total_list)
+			argo_holder.data = argo_holder.data*100 
+			argo_holder.grid_plot()
+			plt.colorbar(label='Probability (%)')
+			plt.title('Day '+str(days))
+			plt.savefig(base+str(k))
+			plt.close()
 
 def goship_line_plot():
 
 	transmat = TransMat.load_from_type(2,2,90)
 	argo = Argo.recent_floats(transmat.degree_bins,transmat.total_list)
-    soccom = SOCCOM.recent_floats(transmat.degree_bins,transmat.total_list)
-    hinstance = HInstance.generate_from_transition_matrix([argo,soccom],transmat = transmat,new_total_list=cov.total_list,variable_list=cov.variable_list,degree_bins=transmat.degree_bins)
+	soccom = SOCCOM.recent_floats(transmat.degree_bins,transmat.total_list)
+	hinstance = HInstance.generate_from_transition_matrix([argo,soccom],transmat = transmat,new_total_list=cov.total_list,variable_list=cov.variable_list,degree_bins=transmat.degree_bins)
 
 	output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
 	noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
@@ -456,79 +457,79 @@ def goship_line_plot():
 	p_hat = cov-cov_subtract
 
 
-    def return_goship_locs():
-            base_goship_folder = '/Users/pchamberlain/Projects/transition_matrix/data/goship_lines/'
-            df_list = []
-            df = pd.read_csv(base_goship_folder+'p04_hy1.csv',skiprows=3,usecols=[1,10,11],names=['Cruise','Lats','Lons'])
-            df = df.dropna().drop_duplicates()
-            df_list.append(df)
-            df = pd.read_csv(base_goship_folder+'33AT20120324_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-            df = df.dropna().drop_duplicates()
-            df_list.append(df)
-            df = pd.read_csv(base_goship_folder+'33AT20120419_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-            df = df.dropna().drop_duplicates()
-            df_list.append(df)
-            df = pd.read_csv(base_goship_folder+'49NZ20140717_hy1.csv',skiprows=7,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-            df = df.dropna().drop_duplicates()
-            df_list.append(df)
-            holder = []
-            for file in os.listdir(base_goship_folder+'ar07_74JC20140606_ct1'):
-                    open_file = open(base_goship_folder+'ar07_74JC20140606_ct1/'+file,'r')
-                    lat_lon = []
-                    for line in open_file.readlines()[10:12]:
-                            lat_lon.append(re.findall(r'[-+]?\d+.\d+', line)[0])
-                    holder.append(tuple(lat_lon))
-            lats,lons = zip(*holder)
-            df = pd.DataFrame({'Cruise':['AR07']*len(lats),'Lats':lats,'Lons':lons})
-            df = df.dropna().drop_duplicates()
-            df_list.append(df)
-            return df_list
-    lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
-    zipper = zip(np.split(cov_subtract.diagonal(),4),np.split(cov.diagonal(),4),cov.variable_list)
+	def return_goship_locs():
+			base_goship_folder = '/Users/pchamberlain/Projects/transition_matrix/data/goship_lines/'
+			df_list = []
+			df = pd.read_csv(base_goship_folder+'p04_hy1.csv',skiprows=3,usecols=[1,10,11],names=['Cruise','Lats','Lons'])
+			df = df.dropna().drop_duplicates()
+			df_list.append(df)
+			df = pd.read_csv(base_goship_folder+'33AT20120324_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+			df = df.dropna().drop_duplicates()
+			df_list.append(df)
+			df = pd.read_csv(base_goship_folder+'33AT20120419_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+			df = df.dropna().drop_duplicates()
+			df_list.append(df)
+			df = pd.read_csv(base_goship_folder+'49NZ20140717_hy1.csv',skiprows=7,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+			df = df.dropna().drop_duplicates()
+			df_list.append(df)
+			holder = []
+			for file in os.listdir(base_goship_folder+'ar07_74JC20140606_ct1'):
+					open_file = open(base_goship_folder+'ar07_74JC20140606_ct1/'+file,'r')
+					lat_lon = []
+					for line in open_file.readlines()[10:12]:
+							lat_lon.append(re.findall(r'[-+]?\d+.\d+', line)[0])
+					holder.append(tuple(lat_lon))
+			lats,lons = zip(*holder)
+			df = pd.DataFrame({'Cruise':['AR07']*len(lats),'Lats':lats,'Lons':lons})
+			df = df.dropna().drop_duplicates()
+			df_list.append(df)
+			return df_list
+	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
+	zipper = zip(np.split(cov_subtract.diagonal(),4),np.split(cov.diagonal(),4),cov.variable_list)
 
-    var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
-    'o2': 'Oxygen ($mol\ m^{-2}$)'}
+	var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
+	'o2': 'Oxygen ($mol\ m^{-2}$)'}
 	data_dict = {}
 	for c,cs,var in zipper:
-	        plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
-	        f = interp2d(lon_grid,lat_grid,plottable)
-	        XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
-	        m.pcolormesh(XX,YY,plottable,vmax=100,vmin=0,alpha=0.6)
-	        plt.colorbar(label=var2_dict[var]+' % Constrained Variance')
-	        for df in df_list:
+			plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
+			f = interp2d(lon_grid,lat_grid,plottable)
+			XX,YY,m = basemap_setup(lat_grid,lon_grid,'')
+			m.pcolormesh(XX,YY,plottable,vmax=100,vmin=0,alpha=0.6)
+			plt.colorbar(label=var2_dict[var]+' % Constrained Variance')
+			for df in df_list:
 
-	                
-	                lats = df['Lats'].tolist()
-	                lats = [float(x) for x in lats]
-	                lons = df['Lons'].tolist()
-	                lons = [float(x) for x in lons]
-	                interp_list = [f(coord[0],coord[1])[0] for coord in zip(lons,lats)]
-	                cruise = df.Cruise.tolist()[0]
-	                cruise = cruise.replace(' ','')
-	                print(cruise)
-	                try:
-	                        data_dict[cruise][var] = interp_list
-	                except KeyError:
-	                        data_dict[cruise] = {}
-	                        data_dict[cruise][var] = interp_list                            
-	                x,y = m(lons,lats)
-	                m.scatter(x,y,zorder=15)
+					
+					lats = df['Lats'].tolist()
+					lats = [float(x) for x in lats]
+					lons = df['Lons'].tolist()
+					lons = [float(x) for x in lons]
+					interp_list = [f(coord[0],coord[1])[0] for coord in zip(lons,lats)]
+					cruise = df.Cruise.tolist()[0]
+					cruise = cruise.replace(' ','')
+					print(cruise)
+					try:
+							data_dict[cruise][var] = interp_list
+					except KeyError:
+							data_dict[cruise] = {}
+							data_dict[cruise][var] = interp_list                            
+					x,y = m(lons,lats)
+					m.scatter(x,y,zorder=15)
 
-	        # m = argo.scatter_plot(m=m)
-	        # m = soccom.scatter_plot(m=m)
-	        plt.savefig(base+var+'_all_cruises')
-	        plt.close()
+			# m = argo.scatter_plot(m=m)
+			# m = soccom.scatter_plot(m=m)
+			plt.savefig(base+var+'_all_cruises')
+			plt.close()
 
 	for cruise in data_dict.keys():
-	        temp_dict = data_dict[cruise]
-	        for var in temp_dict.keys():
-	                data = temp_dict[var]
-	                plt.plot(range(len(data)),data,label=var)
-	        plt.legend()
-	        plt.ylabel('% Constrained Variance')
-	        plt.xlabel('Station #')
-	        plt.savefig(base+'lineplot_'+cruise)
-	        plt.close()
+			temp_dict = data_dict[cruise]
+			for var in temp_dict.keys():
+					data = temp_dict[var]
+					plt.plot(range(len(data)),data,label=var)
+			plt.legend()
+			plt.ylabel('% Constrained Variance')
+			plt.xlabel('Station #')
+			plt.savefig(base+'lineplot_'+cruise)
+			plt.close()
 
 	# @staticmethod
 	# def gradient_calc(data):
