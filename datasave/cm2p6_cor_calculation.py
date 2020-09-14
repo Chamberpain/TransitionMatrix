@@ -10,6 +10,7 @@ from compute_utilities.list_utilities import find_nearest, flat_list
 from transition_matrix.makeplots.plot_utils import basemap_setup,transition_vector_to_plottable
 import scipy.sparse.linalg
 from scipy.sparse import csc_matrix
+from transition_matrix.definitions import ROOT_DIR
 
 
 def save_lat_lon():
@@ -116,6 +117,9 @@ class matrix_element(object):
 		return eigs
 
 	def eig_val_plot(self):
+		base = ROOT_DIR+'/plots/cm2p6_covariance/'
+
+
 		eigs = self.return_eig_vals()
 		fig = plt.figure()
 		ax = fig.add_subplot(2, 1, 1)
@@ -133,7 +137,7 @@ class matrix_element(object):
 		plt.title('Negative Eigenvalues')
 		ax.set_yscale('log')
 		plt.gca().invert_yaxis()
-		plt.savefig(self.file_name+'_eig_vals')
+		plt.savefig(base+self.file_name+'_eig_vals')
 		plt.close()
 
 class cov_element(matrix_element):
@@ -267,6 +271,8 @@ class cov_array(object):
 		mat_obj.save()
 
 	def diagnostic_data_plots(self,first_e_vals=10):
+		base = ROOT_DIR+'/plots/cm2p6_covariance/'
+
 		time_time = np.cov(self.data)
 		tt = matrix_element(time_time,self.lats,self.lons,self.lat_grid,self.lon_grid,self.file_name+'_time_time_cov')
 		tt.eig_val_plot()
@@ -290,7 +296,7 @@ class cov_array(object):
 				plt.title(var+' e_vec_'+str(k)+', percent constrained = '+percent)
 				plt.subplot(2,1,2)
 				plt.plot(self.time,e_holder)
-				plt.savefig(var+'_e_vec_'+str(k))
+				plt.savefig(base+var+'_e_vec_'+str(k))
 				plt.close()
 
 	def generate_cov(self):
