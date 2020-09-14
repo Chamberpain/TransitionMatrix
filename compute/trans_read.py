@@ -364,11 +364,11 @@ class TransMat(BaseMat):
 		if rescale:
 			self.rescale()
 
-	@staticmethod
-	def load_from_type(lat_spacing=None,lon_spacing=None,time_step=None, traj_type='argo'):
+	@classmethod
+	def load_from_type(cls,lat_spacing=None,lon_spacing=None,time_step=None, traj_type='argo'):
 		degree_bins = [np.array(float(lat_spacing)),np.array(float(lon_spacing))]
 		file_name = TransMat.make_filename(traj_type=traj_type,degree_bins=degree_bins,time_step=time_step)
-		return TransMat.load(file_name)
+		return cls.load(file_name)
 
 	@staticmethod
 	def make_filename(traj_type=None,degree_bins=None,time_step=None):
@@ -377,10 +377,10 @@ class TransMat(BaseMat):
 		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
 		return base+traj_type+'/'+str(time_step)+'-'+str(degree_bins)+'.npz'
 
-	@staticmethod
-	def load(filename):
+	@classmethod
+	def load(cls,filename):
 		loader = np.load(filename,allow_pickle=True)
-		return TransMat((loader['data'], loader['indices'], loader['indptr']),shape=loader['shape'],
+		return cls((loader['data'], loader['indices'], loader['indptr']),shape=loader['shape'],
 			total_list = loader['total_list'],lat_spacing=loader['lat_spacing'],
 			lon_spacing=loader['lon_spacing'],time_step=loader['time_step'],
 			number_data=loader['number_data'],traj_file_type=loader['traj_file_type'])
