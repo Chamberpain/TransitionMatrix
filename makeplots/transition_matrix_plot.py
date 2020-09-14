@@ -73,9 +73,10 @@ class TransPlot(TransMat):
         k = self.number_matrix.sum(axis=0)
         k = k.T
         print k
-        number_matrix_plot = transition_vector_to_plottable(self.bins_lat,self.bins_lon,self.total_list,k)
+        bins_lat,bins_lon = self.bins_generator(self.degree_bins)
+        number_matrix_plot = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,k)
         plt.figure('number matrix',figsize=(10,10))
-        XX,YY,m = basemap_setup(self.bins_lat,self.bins_lon,self.traj_file_type)  
+        XX,YY,m = basemap_setup(bins_lat,bins_lon,self.traj_file_type)  
         number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
         m.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=0,vmax=300)
         # plt.title('Transition Density',size=30)
@@ -145,7 +146,7 @@ class TransPlot(TransMat):
         m.drawmapboundary()
         m.fillcontinents()
         Y_ = np.arange(-68.0,66.0,degree_sep)
-        X_ = np.arange(-162.0,162.0,degree_sep)
+        X_ = np.arange(-170.0,170.0,degree_sep)
         XX,YY = np.meshgrid(X_,Y_)
         n_s = np.zeros(XX.shape)
         e_w = np.zeros(XX.shape)
@@ -171,7 +172,7 @@ class TransPlot(TransMat):
                         w,v = np.linalg.eig(np.cov(x,y))
                     except:
                         continue
-                    angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))
+                    angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))+90
                     axis1 = np.log(2*max(w)*np.sqrt(5.991))
 
                     axis2 = np.log(2*min(w)*np.sqrt(5.991))
@@ -187,7 +188,7 @@ class TransPlot(TransMat):
         if arrows:
             e_w = np.ma.array(e_w,mask=(e_w==0))
             n_s = np.ma.array(n_s,mask=(n_s==0))            
-            m.quiver(XX,YY,e_w,n_s,scale=.5)
+            m.quiver(XX,YY,e_w,n_s,scale=.01)
         return m
 
     def plot_latest_soccom_locations(self,m):
