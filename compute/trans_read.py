@@ -2,11 +2,13 @@ from __future__ import print_function
 from compute_utilities.list_utilities import find_nearest,flat_list
 import numpy as np
 import matplotlib.pyplot as plt
-from sets import Set
 from collections import Counter
 import scipy.sparse
 import json
 import scipy.sparse.linalg
+import pandas as pd
+import scipy.spatial as spatial
+import os 
 
 
 class TransitionCalc(object):
@@ -59,7 +61,7 @@ class TransitionCalc(object):
 			List of start indexes and list of end indexes
 			 """
 
-		def get_index_of_decorrelated(self,time_delta=30):
+		def get_index_of_decorrelated(self,time_delta=10):
 			""" Argo trajectories are correlated on time scales of about 30 days (Gille et al. 2003). This subsampling removes the possibiity
 				of dependent data 
 				
@@ -95,12 +97,12 @@ class TransitionCalc(object):
 				Index of the next time
 				 """
 			if not diff_check:
-				diff_check = time_delta/6.
+				diff_check = time_delta/3.
 			seconds_to_days = 1/(3600*24.)
 			diff_list = [(_-self.instance.prof.date._list[start_index]).total_seconds()*seconds_to_days for _ in self.instance.prof.date._list[(start_index+1):]]
 			if not diff_list:
 				return None
-			closest_diff = find_nearest(diff_list,time_delta)
+			closest_diff = find_nearest(diff_list,time_delta,test=False)
 			if abs(closest_diff-time_delta)>diff_check:
 				return None
 			else:
@@ -169,17 +171,114 @@ class TransitionCalc(object):
 		assert (np.abs(transition_matrix.sum(axis=0).T[list(col_list)]-1)<self.checksum).all()
 		return (number_matrix,transition_matrix)
 
+class SubclassedDataFrame(pd.DataFrame):
+	def return_index_of_not_enough_numbers(self):
+		number_start = self.groupby(['StartIDX']).count()
+		return number_start.index[(number_start<3).EndIDX].values.tolist()
+
+	def return_count_df(self):
+		df_ = self.groupby(['StartIDX','EndIDX']).size().reset_index(name='Count')
+		row_idx = df_['EndIDX'].values.tolist()
+		col_idx = df_['StartIDX'].values.tolist()
+		data = df_['Count'].values.tolist()
+		return (row_idx,col_idx,data)
+
 class TransitionClassAgg(object):
-	def __init__(self,lat_spacing=2,lon_spacing=2,time_step=60,drifter_class=None):
+	def __init__(self,lat_spacing=2,lon_spacing=2,time_step=60,drifter_class=None,eig_vecs_flag=True):
 		self.lat_bins = np.arange(-90,90.1,lat_spacing)
 		self.lon_bins = np.arange(-180,180.1,lon_spacing)
 		self.time_step = time_step
 		self.class_dict = drifter_class.all_dict
 		self.drifter_type = drifter_class.data_description 
+		
+
+
 		dummy_list = [TransitionCalc(_,self.lat_bins,self.lon_bins,time_step=time_step) for _ in self.class_dict.values()]
-		self.class_dict = dict(zip(self.class_dict.keys(),dummy_list))
-		# self.create_total_list()
-		self.index_transcalc_classes()
+		start_list = flat_list([_.return_masked_start_and_end_bins()[0] for _ in dummy_list])
+		start_list = [tuple(x) for x in start_list]
+		start_set = set((start_list))
+		end_list = flat_list([_.return_masked_start_and_end_bins()[1] for _ in dummy_list])
+		end_list = [tuple(x) for x in end_list]
+		end_set = set((end_list))
+
+		set_overlap = list(start_set.intersection(end_set))
+		lat_sep = np.diff(self.lat_bins)[0]
+		lon_sep = np.diff(self.lon_bins)[0]
+		flag = False
+		while not flag:
+			overlap_dict = dict(zip(set_overlap,range(len(set_overlap))))
+
+
+
+			return_list = []
+			for start_idx,end_idx in zip(start_list,end_list):  
+				try:              
+					start_idx = overlap_dict[start_idx]
+					end_idx = overlap_dict[end_idx]
+					return_list.append((start_idx,end_idx))
+				except KeyError:
+					continue
+			print('finished the index list calculations')
+
+
+
+			df = SubclassedDataFrame(return_list,columns=['StartIDX','EndIDX'])
+
+			if df.return_index_of_not_enough_numbers():
+				print('there were '+str(len(df.return_index_of_not_enough_numbers()))+' indexes that were not large enough')
+				not_vacant_cells = set(([set_overlap[_] for _ in df.StartIDX.unique().tolist()]))
+				set_overlap = set((set_overlap).difference(Set([set_overlap[_] for _ in df.return_index_of_not_enough_numbers()])))
+				set_overlap = set_overlap.intersection(not_vacant_cells)
+				set_overlap = list(set_overlap)
+				print('length of set overlap is ',len(set_overlap))
+				print(set_overlap)
+				continue
+			print('length of set overlap is ',len(set_overlap))
+			tree = spatial.KDTree(set_overlap)
+			closest_bins_spacing,_ = tree.query(set_overlap,k=2)
+			idx_list = np.where(closest_bins_spacing[:,1]>np.sqrt(lat_sep**2+lon_sep**2))[0].tolist()
+			if idx_list:
+				print('there were isolated grid points')
+				set_overlap = set((set_overlap).difference(Set([set_overlap[_] for _ in idx_list])))
+				set_overlap = list(set_overlap)
+				continue
+
+			row_idx,col_idx,data = df.return_count_df()
+			mat = BaseMat((data,(row_idx,col_idx)),shape=(len(set_overlap)
+				,len(set_overlap)))
+			div_array = np.abs(mat.sum(axis=0)).tolist()[0]
+			div_list = np.where(np.array(div_array)==0)[0].tolist()
+			if div_list:
+				set_overlap = set((set_overlap).difference(set(([set_overlap[_] for _ in div_list]))))
+				set_overlap = list(set_overlap)
+				continue
+			col_count = []
+			for col in col_idx:
+				col_count.append(float(div_array[col]))
+			scaled_data = np.array(data)/np.array(col_count)
+
+			transition_matrix = TransMat((scaled_data,(row_idx,col_idx)),shape=(len(set_overlap)
+				,len(set_overlap)),total_list=set_overlap
+				,lat_spacing = np.diff(self.lat_bins[:2])[0],lon_spacing=np.diff(self.lon_bins[:2])[0]
+				,time_step = self.time_step,number_data=data,traj_file_type=self.drifter_type)
+			if eig_vecs_flag:
+				checksum=10**-5
+				print('begin calculating eigen vectors')
+				eig_val,eig_vecs = scipy.sparse.linalg.eigs(transition_matrix,k=20)
+				print('calculated the eigen vectors')
+				checksum = [abs(eig_vecs[:,k]).max()-5*abs(eig_vecs[:,k]).std() for k in range(eig_vecs.shape[1])]
+				problem_idx = [k for k in range(eig_vecs.shape[1]) if (abs((eig_vecs[:,k]))>checksum[k]).sum()<=3]
+				if problem_idx:
+					print('these were the problem idx: '+str(problem_idx))
+					masked_values = []
+					for idx in problem_idx:
+						masked_values += [set_overlap[i] for i in np.where(eig_vecs[:,idx]>checksum[idx])[0].tolist()]
+					set_overlap = set((set_overlap).difference(set((masked_values))))
+					set_overlap = list(set_overlap)
+					continue
+			flag = True
+		transition_matrix.save()
+
 
 	def overlap_calc(self,unique_end_list,unique_start_list):
 		"""
@@ -188,8 +287,8 @@ class TransitionClassAgg(object):
 		"""
 		unique_end_list = [tuple(_) for _ in flat_list(unique_end_list)]
 		unique_start_list = [tuple(_) for _ in flat_list(unique_start_list)]
-		unique_end_list = Set(unique_end_list)
-		unique_start_list = Set(unique_start_list)
+		unique_end_list = set((unique_end_list))
+		unique_start_list = set((unique_start_list))
 		start_list_overlap = list(unique_start_list.difference(unique_end_list))
 		end_list_overlap = list(unique_end_list.difference(unique_start_list))
 		return (start_list_overlap, end_list_overlap)
@@ -204,8 +303,8 @@ class TransitionClassAgg(object):
 		while (end_list_overlap!=[])|(start_list_overlap!=[]):
 			masked_start_values += start_list_overlap
 			masked_end_values += end_list_overlap
-			masked_start_values = list(Set(masked_start_values))
-			masked_end_values = list(Set(masked_end_values))
+			masked_start_values = list(set((masked_start_values)))
+			masked_end_values = list(set((masked_end_values)))
 			print(len(start_list_overlap))
 			print(len(end_list_overlap))
 			print(len(masked_start_values))
@@ -221,8 +320,8 @@ class TransitionClassAgg(object):
 				unique_end_list[idx]=dummy_end
 
 			start_list_overlap,end_list_overlap = self.overlap_calc(unique_end_list,unique_start_list)
-		start_list = Set([tuple(i) for i in flat_list(unique_start_list)])
-		end_list = Set([tuple(i) for i in flat_list(unique_end_list)])
+		start_list = set(([tuple(i) for i in flat_list(unique_start_list)]))
+		end_list = set(([tuple(i) for i in flat_list(unique_end_list)]))
 		return (list(start_list.intersection(end_list)),masked_start_values,masked_end_values)
 
 	def index_transcalc_classes(self):
@@ -290,8 +389,8 @@ class TransitionClassAgg(object):
 			while (end_list_overlap!=[])|(start_list_overlap!=[]):
 				masked_start_values += start_list_overlap
 				masked_end_values += end_list_overlap
-				masked_start_values = list(Set(masked_start_values))
-				masked_end_values = list(Set(masked_end_values))
+				masked_start_values = list(set((masked_start_values)))
+				masked_end_values = list(set((masked_end_values)))
 				print('length of the start list is', len(start_list_overlap))
 				print( 'length of the end list is', len(end_list_overlap))
 				print('length of the masked start list is', len(masked_start_values))
@@ -307,10 +406,10 @@ class TransitionClassAgg(object):
 					unique_end_list[idx]=dummy_end
 
 				start_list_overlap,end_list_overlap = self.overlap_calc(unique_end_list,unique_start_list)
-			start_list = Set([tuple(i) for i in flat_list(unique_start_list)])
-			end_list = Set([tuple(i) for i in flat_list(unique_end_list)])
-			print(len(Set(masked_start_values)))
-			print(len(Set(masked_end_values)))
+			start_list = set(([tuple(i) for i in flat_list(unique_start_list)]))
+			end_list = set(([tuple(i) for i in flat_list(unique_end_list)]))
+			print(len(set((masked_start_values))))
+			print(len(set((masked_end_values))))
 			temp_total_list = list(start_list.intersection(end_list))
 
 
@@ -342,7 +441,7 @@ class BaseMat(scipy.sparse.csc_matrix):
 		super(BaseMat,self).__init__(arg1, shape=shape)
 		self.total_list = total_list
 		self.degree_bins = [lon_spacing,lat_spacing]
-		self.traj_file_type = traj_file_type
+		self.traj_file_type = str(traj_file_type)
 
 	@staticmethod
 	def bins_generator(degree_bins):
@@ -357,8 +456,8 @@ class BaseMat(scipy.sparse.csc_matrix):
 
 class TransMat(BaseMat):
 	def __init__(self, arg1, shape=None,total_list=None,lat_spacing=None,lon_spacing=None
-		,time_step=None,number_data=None,traj_file_type=None,rescale=True):
-		super(TransMat,self).__init__(arg1, shape=shape,total_list=total_list,lat_spacing=lat_spacing,lon_spacing=lon_spacing,traj_file_type=None)
+		,time_step=None,number_data=None,traj_file_type=None,rescale=False):
+		super(TransMat,self).__init__(arg1, shape=shape,total_list=total_list,lat_spacing=lat_spacing,lon_spacing=lon_spacing,traj_file_type=traj_file_type)
 		self.time_step = time_step
 		self.number_data = number_data
 		if rescale:
@@ -373,9 +472,11 @@ class TransMat(BaseMat):
 	@staticmethod
 	def make_filename(traj_type=None,degree_bins=None,time_step=None):
 		from transition_matrix.definitions import ROOT_DIR
-		base = ROOT_DIR+'/output/'
+		base = ROOT_DIR+'/output/'+traj_type+'/'
+		if not os.path.isdir(base):
+			os.mkdir(base)
 		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
-		return base+traj_type+'/'+str(time_step)+'-'+str(degree_bins)+'.npz'
+		return base+str(time_step)+'-'+str(degree_bins)+'.npz'
 
 	@classmethod
 	def load(cls,filename):
@@ -421,6 +522,15 @@ class TransMat(BaseMat):
 		assert (self.north_south>=-180/self.degree_bins[0]).all()
 		assert (self.north_south<=180/self.degree_bins[0]).all()
 
+	def return_mean(self):
+		row_list, column_list, data_array = scipy.sparse.find(self)
+		self.get_direction_matrix()
+		east_west_data = self.east_west[row_list,column_list]*data_array
+		north_south_data = self.north_south[row_list,column_list]*data_array
+		east_west = self.new_sparse_matrix(east_west_data)
+		north_south = self.new_sparse_matrix(north_south_data)        
+		return(east_west,north_south)
+
 	def add_noise(self,noise=0.05):
 		"""
 		Adds guassian noise to the transition matrix
@@ -437,14 +547,16 @@ class TransMat(BaseMat):
 		self.rescale()
 
 
-	def rescale(self,checksum=10**-3):
+	def rescale(self,checksum=10**-2):
 		div_array = np.abs(self.sum(axis=0)).tolist()[0]
 		row_idx,column_idx,data = scipy.sparse.find(self)
 		col_count = []
 		for col in column_idx:
 			col_count.append(float(div_array[col]))
 		self.data = np.array(data)/np.array(col_count)
-		self.matrix_column_check(checksum)
+		zero_idx = np.where(np.abs(self.sum(axis=0))==0)[1]
+		self[zero_idx,zero_idx]=1
+		self.matrix_column_check(checksum=checksum)
 
 	def matrix_eig_check(self,checksum=10**-5,bool_return=False):
 		eig_vals,eig_vecs = scipy.sparse.linalg.eigs(self,k=30)
@@ -455,6 +567,43 @@ class TransMat(BaseMat):
 
 	def matrix_column_check(self,checksum):
 		assert (np.abs(self.sum(axis=0)-1)<checksum).all()
+
+	def reduce_resolution(self,new_degree_bins):
+		lat_mult = new_degree_bins[0]/self.degree_bins[0]
+		lon_mult = new_degree_bins[1]/self.degree_bins[1]
+
+		reduced_res_lat_bins,reduced_res_lon_bins = self.bins_generator(new_degree_bins)
+		lat_bins,lon_bins = zip(*self.total_list)
+		lat_idx = np.digitize(lat_bins,reduced_res_lat_bins)
+		lon_idx = np.digitize(lon_bins,reduced_res_lon_bins)
+		reduced_res_bins=[(reduced_res_lat_bins[i],reduced_res_lon_bins[j]) for i,j in zip(lat_idx,lon_idx)]
+		reduced_res_total_list = list(set((reduced_res_bins)))
+		translation_list = [reduced_res_total_list.index(x) for x in reduced_res_bins]
+		check = [(np.array(translation_list)==x).sum()<=(lat_mult*lon_mult) for x in range(len(reduced_res_total_list))]
+		assert all(check)
+		translation_dict = dict(zip(range(len(self.total_list)),translation_list))
+		
+		old_row_idx,old_column_idx,old_data = scipy.sparse.find(self)
+		new_row_idx = np.array([translation_dict[ii] for ii in old_row_idx])
+		new_col_idx = np.array([translation_dict[ii] for ii in old_column_idx])
+		out_data = []
+		out_col = []
+		out_row = []
+		for row_dummy, col_dummy in list(set((zip(new_row_idx,new_col_idx)))):
+			mask = (new_row_idx==row_dummy)&(new_col_idx==col_dummy)
+			data_dummy = old_data[mask]
+			assert len(data_dummy)<=(lat_mult*lon_mult)**2
+#squared because of the possibilty of inter box exchange 
+			out_data.append(data_dummy.sum()*1/(lat_mult*lon_mult))
+			out_col.append(col_dummy)
+			out_row.append(row_dummy)
+		mat_dim = len(reduced_res_total_list)
+		TransMat((out_data,(out_row,out_col
+			)),shape=(mat_dim,mat_dim),total_list=reduced_res_total_list,
+			lat_spacing=new_degree_bins[0],lon_spacing=new_degree_bins[1],time_step=self.time_step,number_data=None,
+			traj_file_type=self.traj_file_type,rescale=True)		
+
+
 
 	def save_trans_matrix_to_json(self,foldername):
 		for column in range(self.shape[1]):
