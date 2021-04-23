@@ -1,5 +1,5 @@
 from __future__ import print_function
-from compute_utilities.list_utilities import find_nearest,flat_list
+from GeneralUtilities.Compute.list import find_nearest,flat_list
 import numpy as np
 import matplotlib.pyplot as plt
 from collections import Counter
@@ -11,7 +11,7 @@ import scipy.spatial as spatial
 import os 
 from scipy.sparse import _sparsetools
 from scipy.sparse.sputils import (get_index_dtype,upcast)
-from data_save_utilities.lagrangian.drifter_base_class import BaseRead
+from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
 from random import shuffle
 
 

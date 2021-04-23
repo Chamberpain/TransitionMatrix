@@ -2,17 +2,15 @@ from __future__ import print_function
 import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
-from transition_matrix.compute.trans_read import BaseMat,TransMat
+from TransitionMatrix.Utilities.Compute.trans_read import BaseMat,TransMat
 # get an absolute path to the directory that contains mypackage
-from transition_matrix.makeplots.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector
-from compute_utilities.list_utilities import find_nearest
+from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector,Argo,SOCCOM
+from TransitionMatrix.Utilities.Plot.transition_matrix_plot import TransPlot
+from GeneralUtilities.Compute.list import find_nearest
 import scipy 
 from netCDF4 import Dataset
-from transition_matrix.makeplots.transition_matrix_plot import TransPlot
-from transition_matrix.makeplots.plot_utils import cartopy_setup
 import matplotlib.cm as cm
-from transition_matrix.definitions import ROOT_DIR
-from transition_matrix.makeplots.argo_data import Argo,SOCCOM
+from TransitionMatrix.definitions import ROOT_DIR
 from scipy.interpolate import interp2d
 from shapely.geometry import Point, Polygon
 import random
