@@ -4,7 +4,8 @@ import matplotlib.pyplot as plt
 import os, sys
 from TransitionMatrix.Utilities.Compute.trans_read import BaseMat,TransMat
 # get an absolute path to the directory that contains mypackage
-from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector,Argo,SOCCOM
+from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector
+from TransitionMatrix.Utilities.Plot.argo_data import Argo,SOCCOM
 from TransitionMatrix.Utilities.Plot.transition_matrix_plot import TransPlot
 from GeneralUtilities.Compute.list import find_nearest
 import scipy 
@@ -793,15 +794,6 @@ def regional_variance(lllon=-135,urlon=-105,lllat=20,urlat=55):
 
 				hinstance = hinstance.T
 				noise = scipy.sparse.diags([p_hat_holder.diagonal().mean()*noise_factor]*hinstance.shape[0])
-
-		noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
-		denom = hinstance.dot(cov).dot(hinstance.T)+noise
-		denom = scipy.sparse.csc_matrix(denom)
-		inv_denom = scipy.sparse.linalg.inv(denom)
-
-		cov_subtract = scipy.sparse.csc_matrix(cov).dot(hinstance.T.dot(inv_denom).dot(hinstance)).dot(scipy.sparse.csc_matrix(cov))
-
-
 
 				new_p_hat = p_hat_holder-p_hat_holder.dot(hinstance.T.dot(scipy.sparse.linalg.inv(hinstance.dot(p_hat_holder).dot(hinstance.T)+noise))).dot(hinstance).dot(p_hat_holder)
 				zipper = zip(np.split(new_p_hat.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
