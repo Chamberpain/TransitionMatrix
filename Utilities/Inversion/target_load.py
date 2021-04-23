@@ -66,7 +66,7 @@ class InverseInstance(CovBase):
 	@staticmethod
 	def make_filename(traj_type=None,degree_bins=None,l=None):
 		from transition_matrix.definitions import ROOT_DIR
-		base = ROOT_DIR+'/output/'
+		base = ROOT_DIR+'/Output/Data/'
 		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
 		return base+traj_type+'/'+str(l)+'-'+str(degree_bins)+'.npz'
 
