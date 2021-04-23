@@ -11,7 +11,7 @@ from GeneralUtilities.Compute.list import find_nearest
 import scipy 
 from netCDF4 import Dataset
 import matplotlib.cm as cm
-from TransitionMatrix.definitions import ROOT_DIR
+from TransitionMatrix.definitions import ROOT_DIR, DATA_OUTPUT_DIR,PLOT_OUTPUT_DIR
 from scipy.interpolate import interp2d
 from shapely.geometry import Point, Polygon
 import random
@@ -752,79 +752,97 @@ def goship_line_plot(depth_level=0):
 
 
 
-def regional_variance(lllon=-135,urlon=-105,lllat=20,urlat=55):
-	lllon=-100;urlon=-81.5;lllat=20.5;urlat=30.5
+def regional_variance():
 	depth_list = np.arange(0,21,2).tolist()
-	num_list = [3,6,12,15,18]
-	out_list = []
+	num_list = [3,6,12,15,18,21,24,27]
+	for name, region in [('GOMMEC',[-100,-81.5,20.5,30.5]),('CCS',[-135,-105,20,55])]:
+		lllon,urlon,lllat,urlat = region
+		
 
-	for depth_level in depth_list:
+		out_list = []
 
-
-		global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
-		submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
-		p_hat = global_cov+submeso_cov
-		coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
-		poly = Polygon(coords)
-		total_truth = [Point(x[0],x[1]).within(poly) for x in p_hat.total_list]
-		idx = np.where(total_truth)[0]
-		total_idx = []
-		for i in range(len(p_hat.variable_list)):
-			total_idx+=(i*len(p_hat.total_list)+idx).tolist()
-
-		p_hat_holder = p_hat[total_idx,:]
-		p_hat_holder = p_hat_holder[:,total_idx]
-		total_list = np.array(p_hat.total_list)[total_truth]
-
-		lat_grid, lon_grid = p_hat.bins_generator(p_hat.degree_bins)
-		zipper = zip(np.split(p_hat_holder.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
-		scale_dict = {}
-		for c,var in list(zipper):
-			print(var)
-			plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
-			plottable[plottable<0]=0
-			scale_dict[var]=plottable.sum()
+		for depth_level in depth_list:
 
 
-		for num in num_list:
-			for i in range(50):
-				print('this is instance '+str(i)+' of float number '+str(num))
-				hinstance = HInstance.randomly_generate(num,total_list=total_list,variable_list=p_hat.variable_list,degree_bins=p_hat.degree_bins,limit=[lllon,urlon,lllat,urlat])
-				assert hinstance.data.sum()==num*len(p_hat.variable_list)
+			global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
+			submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
+			p_hat = global_cov+submeso_cov
+			coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
+			poly = Polygon(coords)
+			total_truth = [Point(x[0],x[1]).within(poly) for x in p_hat.total_list]
+			idx = np.where(total_truth)[0]
+			total_idx = []
+			for i in range(len(p_hat.variable_list)):
+				total_idx+=(i*len(p_hat.total_list)+idx).tolist()
 
-				hinstance = hinstance.T
-				noise = scipy.sparse.diags([p_hat_holder.diagonal().mean()*noise_factor]*hinstance.shape[0])
+			p_hat_holder = p_hat[total_idx,:]
+			p_hat_holder = p_hat_holder[:,total_idx]
+			total_list = np.array(p_hat.total_list)[total_truth]
 
-				new_p_hat = p_hat_holder-p_hat_holder.dot(hinstance.T.dot(scipy.sparse.linalg.inv(hinstance.dot(p_hat_holder).dot(hinstance.T)+noise))).dot(hinstance).dot(p_hat_holder)
-				zipper = zip(np.split(new_p_hat.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+			lat_grid, lon_grid = p_hat.bins_generator(p_hat.degree_bins)
+			zipper = zip(np.split(p_hat_holder.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+			scale_dict = {}
+			for c,var in list(zipper):
+				print(var)
+				plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
+				plottable[plottable<0]=0
+				scale_dict[var]=plottable.sum()
 
-				for c,var in list(zipper):
-					print(var)
-					plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
-					plottable[plottable<0]=0
-					percent_constrained = plottable.sum()
-					out_list.append((percent_constrained/scale_dict[var],var,num,depth_level))
-	np.save(np.array(out_list),'download_me')
-	val,var,num,depth = zip(*out_list)
-	for var_dummy in np.unique(var):
-		std_array = np.zeros([len(depth_list,len(num_list))])
-		mean_array = np.zeros([len(depth_list,len(num_list))])
-		for i,depth_dummy in enumerate(depth_list):
-			for k,num_dummy in enumerate(num_list):
-				mask = (np.array(var)==var_dummy)&(np.array(num)==num_dummy)&(np.array(depth)==depth_dummy)
-				val_list = np.array(val)[mask]
-				mean_list.append(val_list.mean()*100)
-				num_idx = num_list.index(num_dummy)
-				depth_idx = depth_list.index(depth_dummy)
-				std_array[depth_idx,num_idx]=val_list.std()*100
-				mean_array[depth_idx,num_idx]=val_list.mean()*100
 
-		plt.pcolor(mean_array)
-		plt.colorbar(vmin=0,vmax=100)
-		plt.ylabel('Depth')
-		plt.xlabel('Number of floats deployed')
-		plt.savefig(var+'_mean')
-		plt.close()
+			for num in num_list:
+				for i in range(50):
+					print('this is instance '+str(i)+' of float number '+str(num))
+					hinstance = HInstance.randomly_generate(num,total_list=total_list,variable_list=p_hat.variable_list,degree_bins=p_hat.degree_bins,limit=[lllon,urlon,lllat,urlat])
+					assert hinstance.data.sum()==num*len(p_hat.variable_list)
+
+					hinstance = hinstance.T
+					noise = scipy.sparse.diags([p_hat_holder.diagonal().mean()*noise_factor]*hinstance.shape[0])
+
+					new_p_hat = p_hat_holder-p_hat_holder.dot(hinstance.T.dot(scipy.sparse.linalg.inv(hinstance.dot(p_hat_holder).dot(hinstance.T)+noise))).dot(hinstance).dot(p_hat_holder)
+					zipper = zip(np.split(new_p_hat.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+
+					for c,var in list(zipper):
+						print(var)
+						plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
+						plottable[plottable<0]=0
+						percent_constrained = plottable.sum()
+						out_list.append((percent_constrained/scale_dict[var],var,num,depth_level))
+		np.save(DATA_OUTPUT_DIR+'regional_calcs/'+name,np.array(out_list))
+		out_list = np.load(DATA_OUTPUT_DIR+'regional_calcs/'+name+'.npy')
+		filepath = ROOT_DIR + '/../../data/cm4/thetao/thetao_Omon_GFDL-CM4_historical_r1i1p1f1_gr_185001-186912.nc'
+		ncfid = Dataset(filepath)
+
+		val,var,num,depth = zip(*out_list)
+		val = [float(x) for x in val]
+		num = [int(x) for x in num]
+		depth = [int(x) for x in depth]
+
+		translation_dict = {'chl':'Chl','o2':'O2','ph':'Ph','so':'Salinity','thetao':'Temperature'}
+		for var_dummy in np.unique(var):
+
+			depths_num = np.sort(np.unique(np.array(depth)[(np.array(var)==var_dummy)]))
+			std_array = np.zeros([len(depths_num),len(num_list)])
+			mean_array = np.zeros([len(depths_num),len(num_list)])		
+			depths = ncfid['lev'][:][depths_num]
+			XX,YY = np.meshgrid(num_list,depths)
+			for i,depth_dummy in enumerate(depths_num):
+				for k,num_dummy in enumerate(num_list):
+					mask = (np.array(var)==var_dummy)&(np.array(num)==num_dummy)&(np.array(depth)==depth_dummy)
+					val_list = np.array(val)[mask]
+					num_idx = num_list.index(num_dummy)
+					depth_idx = depth_list.index(depth_dummy)
+					std_array[depth_idx,num_idx]=100-val_list.std()*100
+					mean_array[depth_idx,num_idx]=100-val_list.mean()*100
+
+			plt.pcolor(XX,YY,mean_array,vmin=0,vmax=100)
+			plt.colorbar()
+			plt.ylabel('Depth (m)')
+			plt.xlabel('Number of floats deployed')
+			plt.title('Mean Variance Constrained for '+translation_dict[var_dummy])
+			plt.gca().invert_yaxis()
+			plt.show()
+			plt.savefig(PLOT_OUTPUT_DIR+'regional_calcs/'+name+'_'+var_dummy+'_mean')
+			plt.close()
 	# @staticmethod
 	# def gradient_calc(data):
 	# 		dy = 111.7*1000
