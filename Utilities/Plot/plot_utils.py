@@ -1,7 +1,7 @@
 from __future__ import print_function
 import numpy as np
 import cartopy.crs as ccrs
-from compute_utilities.list_utilities import find_nearest
+from GeneralUtilities.Compute.list import find_nearest
 import cartopy.feature as cfeature
 import matplotlib.pyplot as plt
 

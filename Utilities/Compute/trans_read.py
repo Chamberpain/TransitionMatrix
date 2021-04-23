@@ -11,7 +11,6 @@ import scipy.spatial as spatial
 import os 
 from scipy.sparse import _sparsetools
 from scipy.sparse.sputils import (get_index_dtype,upcast)
-from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
 from random import shuffle
 
 
