@@ -754,7 +754,7 @@ def goship_line_plot(depth_level=0):
 
 def regional_variance():
 	depth_list = np.arange(0,21,2).tolist()
-	num_list = [3,6,12,15,18,21,24,27]
+	num_list = [3,6,12,15,18,21,24,27,30,33]
 	for name, region in [('GOMMEC',[-100,-81.5,20.5,30.5]),('CCS',[-135,-105,20,55])]:
 		lllon,urlon,lllat,urlat = region
 		
