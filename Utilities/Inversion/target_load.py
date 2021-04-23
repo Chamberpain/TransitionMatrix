@@ -65,7 +65,7 @@ class InverseInstance(CovBase):
 
 	@staticmethod
 	def make_filename(traj_type=None,degree_bins=None,l=None):
-		from transition_matrix.definitions import ROOT_DIR
+		from TransitionMatrix.definitions import ROOT_DIR
 		base = ROOT_DIR+'/Output/Data/'
 		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
 		return base+traj_type+'/'+str(l)+'-'+str(degree_bins)+'.npz'
@@ -804,7 +804,7 @@ def regional_variance(lllon=-135,urlon=-105,lllat=20,urlat=55):
 					plottable[plottable<0]=0
 					percent_constrained = plottable.sum()
 					out_list.append((percent_constrained/scale_dict[var],var,num,depth_level))
-	np.save(out_list,'download_me')
+	np.save(np.array(out_list),'download_me')
 	val,var,num,depth = zip(*out_list)
 	for var_dummy in np.unique(var):
 		std_array = np.zeros([len(depth_list,len(num_list))])
