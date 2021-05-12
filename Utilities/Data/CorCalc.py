@@ -18,92 +18,7 @@ from itertools import combinations
 def check_symmetric(a, rtol=1e-05, atol=1e-08):
     return np.allclose(a, a.T, rtol=rtol, atol=atol)
 
-def save_lat_lon_cm2p6():
-	nc_fid_token = Dataset('/data/SO12/CM2p6/ocean_scalar.static.nc')
-	mask = nc_fid_token.variables['ht'][:]>2000
-	lon_token = nc_fid_token.variables['xt_ocean'][:]
-	lat_token = nc_fid_token.variables['yt_ocean'][:]
-	X,Y = np.meshgrid(lon_token,lat_token)
-	lon_list = X[mask]
-	lat_list = Y[mask]
-	rounded_lat_list = np.arange(lat_token.min(),lat_token.max()+.5,0.5)
-	rounded_lon_list = np.arange(lon_token.min(),lat_token.max()+.5,0.5)
-	target_lat_list = [find_nearest(lat_token,x) for x in rounded_lat_list]
-	target_lon_list = [find_nearest(lon_token,x) for x in rounded_lon_list]
-	subsample_mask = np.isin(lon_list,target_lon_list)&np.isin(lat_list,target_lat_list)
-	lat_list = lat_list[subsample_mask]
-	lon_list = lon_list[subsample_mask]
-	lat_list = np.array([find_nearest(rounded_lat_list,x) for x in lat_list])
-	lon_list = np.array([find_nearest(rounded_lon_list,x) for x in lon_list])
-	np.save('lat_list.npy',lat_list)
-	np.save('lon_list.npy',lon_list)
-	np.save('mask.npy',mask.data)
-	np.save('subsample_mask.npy',subsample_mask)
-
-def recompile_subsampled():
-	def variable_extract(nc_,variable_list):
-		matrix_holder = nc_[mask]
-		variable_list.append(matrix_holder.flatten()[subsample_mask].data)		
-		return variable_list
-
-	mask = np.load('mask.npy')
-	subsample_mask = np.load('subsample_mask.npy')
-	surf_dir = '/data/SO12/CM2p6/ocean_minibling_surf_flux/'
-	hun_m_dir = '/data/SO12/CM2p6/ocean_minibling_100m/'
-	data_directory = '/data/SO12/pchamber/cm2p6/'
-	matches = []
-
-	for root, dirnames, filenames in os.walk(data_directory):
-		for filename in fnmatch.filter(filenames, '*ocean.nc'):
-			matches.append(os.path.join(root, filename))	
-
-	for n, match in enumerate(matches):
-		o2_list = []
-		dic_list = []
-		temp_list_100m = []
-		salt_list_100m = []
-		temp_list_surf = []
-		salt_list_surf = []
-		print('file is ',match,', there are ',len(matches[:])-n,'files left')
-		file_date = match.split('/')[-1].split('.')[0]
-		try:
-			hun_m_fid = Dataset(hun_m_dir+file_date+'.ocean_minibling_100m.nc')
-		except FileNotFoundError:
-			try:
-				hun_m_fid = Dataset(data_directory+file_date+'.ocean_minibling_100.nc')
-			except OSError:
-				print('There was a problem with '+data_directory+file_date+'.ocean_minibling_100.nc')
-				print('continuing')
-				continue
-		hun_m_time = hun_m_fid.variables['time'][:]
-		nc_fid = Dataset(match, 'r')
-		nc_fid_time = nc_fid.variables['time'][:]
-		time_idx = [hun_m_time.tolist().index(find_nearest(hun_m_time,t)) for t in nc_fid_time]
-		for k in time_idx:
-			print('day ',k)
-			o2_list = variable_extract(hun_m_fid.variables['o2'][k,:,:],o2_list)
-			dic_list = variable_extract(hun_m_fid.variables['dic'][k,:,:],dic_list)
-		for k in range(len(nc_fid.variables['time'][:])):
-#9 corresponds to 100m
-			salt_list_100m = variable_extract(nc_fid.variables['salt'][k,9,:,:],salt_list_100m)
-			temp_list_100m = variable_extract(nc_fid.variables['temp'][k,9,:,:],temp_list_100m)
-			salt_list_surf = variable_extract(nc_fid.variables['salt'][k,0,:,:],salt_list_surf)
-			temp_list_surf = variable_extract(nc_fid.variables['temp'][k,0,:,:],temp_list_surf)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_time',nc_fid_time.data)
-		o2 = np.vstack(o2_list)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_100m_subsampled_o2',o2)
-		dic = np.vstack(dic_list)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_100m_subsampled_dic',dic)
-		salt_100m = np.vstack(salt_list_100m)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_100m_subsampled_salt',salt_100m)
-		temp_100m = np.vstack(temp_list_100m)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_100m_subsampled_temp',temp_100m)
-		salt_surf = np.vstack(salt_list_surf)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_surf_subsampled_salt',salt_surf)
-		temp_surf = np.vstack(temp_list_surf)
-		np.save('/data/SO12/pchamber/'+str(file_date)+'_surf_subsampled_temp',temp_surf)
-
-class matrix_element(object):
+class MatrixElement(object):
 	def __init__(self,_array,lats,lons,lat_grid,lon_grid,index_list,file_name,label='cm2p6'):
 		self.label = label
 		self.array = _array
@@ -148,7 +63,7 @@ class matrix_element(object):
 		plt.contourf(XX,YY,plot_vec)
 		return ax,fig
 
-class cov_element(matrix_element):
+class CovElement(MatrixElement):
 	def __init__(self,_array,lats,lons,lat_grid,lon_grid,row_var,col_var,file_name):
 		super().__init__(_array,lats,lons,lat_grid,lon_grid,file_name)
 		self.row_var = row_var
@@ -263,7 +178,7 @@ class CovArray(object):
 				try:
 					ss_dummy.plot_data(dic_temp_submeso.diagonal())
 				except NameError:
-					ss_dummy = matrix_element(dic_temp_submeso.diagonal(),self.lats,self.lons,self.lat_grid,\
+					ss_dummy = MatrixElement(dic_temp_submeso.diagonal(),self.lats,self.lons,self.lat_grid,\
 						self.lon_grid,self.index_list,'')
 					ss_dummy.plot_data(dic_temp_submeso.diagonal())
 				plt.colorbar()
@@ -304,7 +219,7 @@ class CovArray(object):
 		self.global_cov = global_cov.multiply(global_scaling)
 		assert (self.global_cov.diagonal()>=0).all()
 
-	# self.scaling = matrix_element(scaling,self.lats,self.lons,self.lat_grid,self.lon_grid,self.file_name+'_scaling_l_'+str(l))
+	# self.scaling = MatrixElement(scaling,self.lats,self.lons,self.lat_grid,self.lon_grid,self.file_name+'_scaling_l_'+str(l))
 
 
 	def save(self):
@@ -342,7 +257,7 @@ class CovArray(object):
 		lons[lons>=180]=lons[lons>=180]-360
 		self.index_list = list(zip(lons,lats))
 
-		tt = matrix_element(time_time,self.lats,self.lons,self.lat_grid,self.lon_grid,self.index_list,\
+		tt = MatrixElement(time_time,self.lats,self.lons,self.lat_grid,self.lon_grid,self.index_list,\
 			self.file_name+'_time_time_cov',label=self.label)
 		tt.eig_val_plot()
 		space_space = self.submeso_cov+self.global_cov 
@@ -350,7 +265,7 @@ class CovArray(object):
 		percent_constrained = [str(round(_,2))+'%' for _ in tt_e_vals/tt_e_vals.sum()*100]
 
 		data = np.split(space_space.todense(),len(self.variable_list),axis=1)
-		ss_dummy = matrix_element(data[0],self.lats,self.lons,self.lat_grid,self.lon_grid,self.index_list,\
+		ss_dummy = MatrixElement(data[0],self.lats,self.lons,self.lat_grid,self.lon_grid,self.index_list,\
 			'')
 
 		for k in range(first_e_vals):
@@ -374,7 +289,7 @@ class CovArray(object):
 			variable_dict = {}
 			for row_var in self.variable_list:
 				cov_holder = self.get_cov(row_var,col_var,cov,break_unit)
-				variable_dict[row_var] = cov_element(cov_holder,self.lats,self.lons,self.lat_grid,\
+				variable_dict[row_var] = CovElement(cov_holder,self.lats,self.lons,self.lat_grid,\
 					self.lon_grid,row_var,col_var,self.file_name+'_'+str(row_var)+'_'+str(col_var))
 			self.cov_dict[col_var] = variable_dict
 
