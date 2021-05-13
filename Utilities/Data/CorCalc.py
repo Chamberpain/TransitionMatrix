@@ -6,12 +6,12 @@ import sys,os
 import time
 import matplotlib
 import matplotlib.pyplot as plt
-from compute_utilities.list_utilities import find_nearest, flat_list
-from transition_matrix.makeplots.plot_utils import cartopy_setup,transition_vector_to_plottable
+from GeneralUtilities.Compute.list import find_nearest, flat_list
+from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable
 import scipy.sparse.linalg
 from scipy.sparse import csc_matrix
-from transition_matrix.definitions import ROOT_DIR
-from data_save_utilities.file_path_utilities import does_file_exist
+from TransitionMatrix.__init__ import ROOT_DIR
+from GeneralUtilities.Filepath.instance import does_file_exist
 from itertools import combinations
 
 
@@ -223,7 +223,7 @@ class CovArray(object):
 
 
 	def save(self):
-		from transition_matrix.makeplots.inversion.target_load import InverseInstance		
+		from TransitionMatrix.Utilities.Inversion.target_load import InverseInstance		
 		filename = InverseInstance.make_filename(self.label+'_global_covariance_'+str(self.depth_idx),[self.lat_sep,self.lon_sep],l=5*self.l)
 		filedir = os.path.dirname(filename)
 		if not os.path.isdir(filedir):
@@ -436,7 +436,7 @@ class CovCM4(CovArray):
 
 	@staticmethod			
 	def make_cov_filename(variable_1,variable_2):
-		return ROOT_DIR + '/output/cm4'+'/'+variable_1+'_'+variable_2+'_cov'
+		return ROOT_DIR + '/Output/Data/cm4'+'/'+variable_1+'_'+variable_2+'_cov'
 
 
 	def stack_data(self):
@@ -555,8 +555,8 @@ class CovCM4(CovArray):
 		return master_list
 
 	@staticmethod
-	def load(self,depth_idx,lat=2,lon=2):
-		from transition_matrix.makeplots.inversion.target_load import InverseInstance		
-		holder = CovCM4(depth_idx = depth)
+	def load(depth_idx,lat=2,lon=2):
+		from TransitionMatrix.Utilities.Inversion.target_load import InverseInstance		
+		holder = CovCM4(depth_idx = depth_idx)
 		holder.submeso_cov = InverseInstance.load_from_type(traj_type=CovCM4.label+'_submeso_covariance_'+str(depth_idx),lat_spacing=lat,lon_spacing=lon,l=300)
 		holder.global_cov = InverseInstance.load_from_type(traj_type=CovCM4.label+'_global_covariance_'+str(depth_idx),lat_spacing=lat,lon_spacing=lon,l=1500)

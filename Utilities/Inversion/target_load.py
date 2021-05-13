@@ -11,7 +11,7 @@ from GeneralUtilities.Compute.list import find_nearest
 import scipy 
 from netCDF4 import Dataset
 import matplotlib.cm as cm
-from TransitionMatrix.definitions import ROOT_DIR, DATA_OUTPUT_DIR,PLOT_OUTPUT_DIR
+from TransitionMatrix.__init__ import ROOT_DIR
 from scipy.interpolate import interp2d
 from shapely.geometry import Point, Polygon
 import random
@@ -65,7 +65,6 @@ class InverseInstance(CovBase):
 
 	@staticmethod
 	def make_filename(traj_type=None,degree_bins=None,l=None):
-		from TransitionMatrix.definitions import ROOT_DIR
 		base = ROOT_DIR+'/Output/Data/'
 		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
 		return base+traj_type+'/'+str(l)+'-'+str(degree_bins)+'.npz'
