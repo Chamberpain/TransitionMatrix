@@ -11,6 +11,7 @@ import random
 import pandas as pd
 import scipy.spatial as spatial
 import geopy
+import scipy.sparse.linalg
 
 
 class SetToDealWithGeo(set):
@@ -207,19 +208,24 @@ def TransitionClassAgg(drifter_class,fresh_dummy_list,lat_spacing=2,lon_spacing=
 		return [trans_geo.tuple_total_list()[x] for x in idx_list]
 
 	def lone_eigen_vectors(pos_obj,trans_geo,mask):
+		XX,YY = trans_geo.get_coords()
+
 		print('Checking for lone eigen vectors')
 		col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-		transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,traj_file_type='Argo',rescale=True)
+		transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
 		transition_matrix.asfptype()
-		checksum=10**-5
 		print('begin calculating eigen vectors')
 		eig_val,eig_vecs = scipy.sparse.linalg.eigs(transition_matrix,k=50)
 		print('calculated the eigen vectors')				
-		checksum = [abs(eig_vecs[:,k]).max()-15*eig_vecs[:,k].std() for k in range(eig_vecs.shape[1])]
+		checksum = [abs(eig_vecs[:,k]).max()*0.1 for k in range(eig_vecs.shape[1])]
 		idx_list = [k for k in range(eig_vecs.shape[1]) if (abs((eig_vecs[:,k]))>checksum[k]).sum()<=2]
-		return [trans_geo.tuple_total_list()[x] for x in idx_list]
+		pos_idx_list = [abs(eig_vecs[:,idx]).tolist().index(abs(eig_vecs[:,idx]).max()) for idx in idx_list]
+		tuple_list = trans_geo.tuple_total_list()
+		mask = [tuple_list[x] for x in pos_idx_list]
+		return mask
 
-
+	base_folder = '/Users/paulchamberlain/Data/Raw/Argo'	
+	aggregate_argo_list(base_folder,read_class=TransitionProfile)
 	all_dict = TransitionProfile.get_subsampled_float_dict(percentage)
 	trans_geo = TransitionGeo()
 	start_bin_list, end_bin_list = get_the_space_and_time_bins(all_dict,trans_geo)
@@ -229,7 +235,7 @@ def TransitionClassAgg(drifter_class,fresh_dummy_list,lat_spacing=2,lon_spacing=
 	while compute:
 		print('mask length is ',len(mask))
 		total_list,mask = create_total_list(pos_obj,mask)
-		trans_geo.total_list = total_list
+		trans_geo.set_total_list(total_list)
 		number_mask = not_enough_numbers(pos_obj,mask)
 		if number_mask:
 			mask += number_mask
@@ -243,3 +249,7 @@ def TransitionClassAgg(drifter_class,fresh_dummy_list,lat_spacing=2,lon_spacing=
 			mask += eigen_mask
 			continue
 		compute = False
+	col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
+	transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
+	transition_matrix.asfptype()
+	transition_matrix.save()

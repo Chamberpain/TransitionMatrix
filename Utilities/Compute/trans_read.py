@@ -1,27 +1,44 @@
 from GeneralUtilities.Compute.list import find_nearest,flat_list
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
+from TransitionMatrix.Utilities.Compute.__init__ import ROOT_DIR
+from GeneralUtilities.Filepath.instance import FilePathHandler
 
 import numpy as np
-import matplotlib.pyplot as plt
-from collections import Counter
 import scipy.sparse
 import json
 import scipy.sparse.linalg
-import pandas as pd
-import scipy.spatial as spatial
 import os 
 from scipy.sparse import _sparsetools
 from scipy.sparse.sputils import (get_index_dtype,upcast)
+import pickle
+
+
+file_handler = FilePathHandler(ROOT_DIR,'trans_read')
 
 class TransitionGeo(object):
 	""" geo information and tools for transition matrices """
 
+	def __init__(self,lat_sep=2,lon_sep=2,time_step=60,file_type='argo'):
+		assert isinstance(lat_sep,int)
+		assert isinstance(lon_sep,int)
+		assert isinstance(time_step,int)
+		assert isinstance(file_type,str)
 
-	def __init__(self,lat_sep=2,lon_sep=2,time_step=60):
 		self.lat_sep = lat_sep
 		self.lon_sep = lon_sep
 		self.time_step = time_step
+		self.file_type=file_type
+
+	def set_total_list(self,total_list):
+		lats,lons,dummy = zip(*[tuple(x) for x in total_list])
+		assert isinstance(total_list,list) 
+		#total list must be a list
+		assert all([isinstance(x,geopy.Point) for x in total_list]) 
+		# total list must be composed of geopy.Points 
+		assert (set(lats).issubset(set(self.get_lat_bins())))&(set(lons).issubset(set(self.get_lon_bins())))
+		# total list must be a subset of the coordinate lists
+		self.total_list = total_list
 
 	def tuple_total_list(self):
 		return [tuple(x) for x in self.total_list]
@@ -37,6 +54,10 @@ class TransitionGeo(object):
 		assert lon_bins.max()<=180
 		assert lon_bins.min()>=-180
 		return lon_bins
+
+	def get_coords(self):
+		XX,YY = np.meshgrid(self.get_lon_bins(),self.get_lat_bins())
+		return (XX,YY)
 
 	def transition_vector_to_plottable(self,vector):
 		lon_grid = self.get_lon_bins().tolist()
@@ -61,15 +82,15 @@ class TransitionGeo(object):
 			vector[n] = plottable[lat_index,lon_index]
 		return vector
 
-
+	def make_filename(self):
+		return file_handler.tmp_file(self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
 
 class BaseMat(scipy.sparse.csc_matrix):
 	"""Base class for transition and correlation matrices, we include the timestep moniker for posterity. Time step for correlation matrices 
 	means the L scaling """
-	def __init__(self, arg1, shape=None,trans_geo=trans_geo,traj_file_type=None,**kwargs):
+	def __init__(self, arg1, shape=None,trans_geo=None,**kwargs):
 		super(BaseMat,self).__init__(arg1, shape=shape,**kwargs)
 		self.trans_geo = trans_geo
-		self.traj_file_type = str(traj_file_type)
 
 	@staticmethod
 	def bins_generator(degree_bins):
@@ -173,48 +194,35 @@ class BaseMat(scipy.sparse.csc_matrix):
 
 
 class TransMat(BaseMat):
-	def __init__(self, arg1, shape=None,trans_geo=None,number_data=None,traj_file_type=None,
+	def __init__(self, arg1, shape=None,trans_geo=None,number_data=None,
 		rescale=False,**kwargs):
-		super(TransMat,self).__init__(arg1, shape=shape,trans_geo=trans_geo,traj_file_type=traj_file_type,**kwargs)
+		super(TransMat,self).__init__(arg1, shape=shape,trans_geo=trans_geo,**kwargs)
 		self.number_data = number_data
 		if rescale:
 			self.rescale()
 
-	@classmethod
-	def load_from_type(cls,lat_spacing=None,lon_spacing=None,time_step=None, traj_type='argo'):
-		degree_bins = [np.array(float(lat_spacing)),np.array(float(lon_spacing))]
-		file_name = TransMat.make_filename(traj_type=traj_type,degree_bins=degree_bins,time_step=time_step)
-		return cls.load(file_name)
+	@staticmethod
+	def load_from_type(lat_spacing=None,lon_spacing=None,time_step=None, traj_type='argo'):
+		trans_geo = TransitionGeo(lat_sep=lat_spacing,lon_sep=lon_spacing,time_step=time_step,file_type=traj_type)
+		file_name = trans_geo.make_filename()
+		return TransMat.load(file_name)
 
 	@staticmethod
-	def make_filename(traj_type=None,degree_bins=None,time_step=None):
-		from TransitionMatrix.Utilities.Compute.__init__ import ROOT_DIR
-		from GeneralUtilities.Filepath.instance import FilePathHandler
-		filehandler = file_handler = FilePathHandler(ROOT_DIR,'trans_read')
-		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
-		return filehandler.tmp_file(str(time_step)+'-'+str(degree_bins)+'.npz')
-
-	@classmethod
-	def load(cls,filename):
-		loader = np.load(filename,allow_pickle=True)
-		return cls((loader['data'], loader['indices'], loader['indptr']),shape=loader['shape'],
-			total_list = loader['total_list'],lat_spacing=loader['lat_spacing'],
-			lon_spacing=loader['lon_spacing'],time_step=loader['time_step'],
-			number_data=loader['number_data'],traj_file_type=loader['traj_file_type'])
+	def load(filename):
+		with open(filename,'rb') as pickle_file:
+			out_data = pickle.load(pickle_file)
+		return out_data
 
 	def save(self,filename=False):
 		if not filename:
-			filename = self.make_filename(traj_type=self.traj_file_type,degree_bins=self.degree_bins,time_step=self.time_step)
-		np.savez(filename, data=self.data, indices=self.indices,indptr=self.indptr, 
-		shape=self.shape, total_list=self.total_list,lat_spacing=self.degree_bins[0],
-		lon_spacing=self.degree_bins[1],time_step=self.time_step,number_data=self.number_data,
-		traj_file_type=self.traj_file_type)
-
-
+			filename = self.trans_geo.make_filename()
+		with open(filename, 'wb') as pickle_file:
+			pickle.dump(self,pickle_file)
+		pickle_file.close()
 
 	def get_direction_matrix(self):
-		"""
 
+		"""
 		notes: this could be made faster by looping through unique values of lat and lon and assigning intelligently
 		"""
 
