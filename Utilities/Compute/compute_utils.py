@@ -12,8 +12,8 @@ def matrix_difference_compare(matrix_1,matrix_2):
     return (q,l2_residual.mean(),l2_residual.data.std())
 
 def matrix_size_match(outer_class,inner_class):
-    outer_class_set = Set([tuple(x) for x in outer_class.total_list])
-    inner_class_set = Set([tuple(x) for x in inner_class.total_list])
+    outer_class_set = Set([tuple(x,y) for x,y,z in outer_class.tuple_total_list()])
+    inner_class_set = Set([tuple(x,y) for x,y,z in inner_class.tuple_total_list()])
     new_index_list = [list(x) for x in list(outer_class_set&inner_class_set)]
 
     def make_new_matrix(_class,new_index_list):

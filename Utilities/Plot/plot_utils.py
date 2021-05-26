@@ -60,6 +60,6 @@ def cartopy_setup(lat_grid,lon_grid,traj_type,fill_color=True,ax=False):
 	gl = ax.gridlines(draw_labels=True)
 	gl.xlabels_top = False
 	gl.ylabels_right = False
-	return XX,YY,ax,fig
+	return (XX,YY,ax,fig)
 
 

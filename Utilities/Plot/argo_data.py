@@ -2,7 +2,7 @@ from __future__ import print_function
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector
+from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup
 import os, sys
 import datetime
 from scipy.sparse.base import isspmatrix

@@ -3,6 +3,7 @@ from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
 from TransitionMatrix.Utilities.Compute.__init__ import ROOT_DIR
 from GeneralUtilities.Filepath.instance import FilePathHandler
+from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup
 
 import numpy as np
 import scipy.sparse
@@ -12,23 +13,28 @@ import os
 from scipy.sparse import _sparsetools
 from scipy.sparse.sputils import (get_index_dtype,upcast)
 import pickle
-
+import geopy
 
 file_handler = FilePathHandler(ROOT_DIR,'trans_read')
 
 class TransitionGeo(object):
 	""" geo information and tools for transition matrices """
-
-	def __init__(self,lat_sep=2,lon_sep=2,time_step=60,file_type='argo'):
+	file_type = 'argo'
+	number_vmin=0
+	number_vmax=300
+	std_vmax=30
+	def __init__(self,lat_sep=2,lon_sep=2,time_step=60):
 		assert isinstance(lat_sep,int)
 		assert isinstance(lon_sep,int)
 		assert isinstance(time_step,int)
-		assert isinstance(file_type,str)
 
 		self.lat_sep = lat_sep
 		self.lon_sep = lon_sep
 		self.time_step = time_step
-		self.file_type=file_type
+
+	def plot_setup(self):
+		XX,YY,ax,fig = cartopy_setup(self.get_lat_bins(),self.get_lon_bins(),self.file_type)
+		return (XX,YY,ax,fig)
 
 	def set_total_list(self,total_list):
 		lats,lons,dummy = zip(*[tuple(x) for x in total_list])
@@ -85,22 +91,113 @@ class TransitionGeo(object):
 	def make_filename(self):
 		return file_handler.tmp_file(self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
 
+	def get_direction_matrix(self):
+		"""
+		notes: this could be made faster by looping through unique values of lat and lon and assigning intelligently
+		"""
+		(lat_list,lon_list,dummy) = zip(*self.tuple_total_list())
+		lat_list = np.array(lat_list)
+		lon_list = np.array(lon_list)
+		pos_max = 180/self.lon_sep #this is the maximum number of bins possible
+		output_ns_list = []
+		output_ew_list = []
+		for (token_lat,token_lon,dummy) in self.tuple_total_list():
+			token_ns = (token_lat-np.array(lat_list))/self.lat_sep
+			token_ew = (token_lon-np.array(lon_list))/self.lon_sep
+			token_ew[token_ew>pos_max]=token_ew[token_ew>pos_max]-2*pos_max #the equivalent of saying -360 degrees
+			token_ew[token_ew<-pos_max]=token_ew[token_ew<-pos_max]+2*pos_max #the equivalent of saying +360 degrees
+			output_ns_list.append(token_ns)
+			output_ew_list.append(token_ew)
+		self.east_west = np.array(output_ew_list)
+		self.north_south = np.array(output_ns_list)
+		assert (self.east_west<=180/self.lon_sep).all()
+		assert (self.east_west>=-180/self.lon_sep).all()
+		assert (self.north_south>=-180/self.lat_sep).all()
+		assert (self.north_south<=180/self.lat_sep).all()
+
+	@classmethod
+	def new_from_old(cls,trans_geo):
+		new_trans_geo = cls(lat_sep=trans_geo.lat_sep,lon_sep=trans_geo.lon_sep,time_step=trans_geo.time_step)
+		new_trans_geo.set_total_list(trans_geo.total_list)
+		return new_trans_geo
+
+class SOSEGeo(TransitionGeo):
+	file_type = 'SOSE'
+	number_vmin=0
+	number_vmax=900
+	std_vmax=15
+
+class SOSECaseGeo(SOSEGeo):
+	def make_filename(self):
+		return file_handler.tmp_file(self.description+'_'+self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
+
+class SummerSOSEGeo(SOSECaseGeo):
+	description = 'Summer'
+
+class WinterSOSEGeo(SOSECaseGeo):
+	description = 'Winter'
+
+class CaseGeo(TransitionGeo):
+	def make_filename(self):
+		return file_handler.tmp_file(self.description+'_'+self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
+
+class ARGOSGeo(CaseGeo):
+	description = 'ARGOS_Positioning'
+
+class GPSGeo(CaseGeo):
+	description = 'GPS_Positioning'
+
+class SummerGeo(CaseGeo):
+	description = 'Summer'
+
+class WinterGeo(CaseGeo):
+	description = 'Winter'
+
+class WithholdingGeo(CaseGeo):
+	def __init__(self,percentage,idx_number,*args,**kwargs):
+		self.description = str(percentage)+'_'+str(idx_number)
+		super().__init__(*args,**kwargs)
+
+class SOSEWithholdingGeo(SOSECaseGeo):
+	def __init__(self,percentage,idx_number,*args,**kwargs):
+		self.description = str(percentage)+'_'+str(idx_number)
+		super().__init__(*args,**kwargs)
+
 class BaseMat(scipy.sparse.csc_matrix):
 	"""Base class for transition and correlation matrices, we include the timestep moniker for posterity. Time step for correlation matrices 
 	means the L scaling """
-	def __init__(self, arg1, shape=None,trans_geo=None,**kwargs):
-		super(BaseMat,self).__init__(arg1, shape=shape,**kwargs)
-		self.trans_geo = trans_geo
+	def __init__(self, arg1,shape=None,trans_geo=None,**kwargs):
+		super(BaseMat,self).__init__(arg1,shape=shape)
+		if trans_geo:
+			self.set_trans_geo(trans_geo)
 
-	@staticmethod
-	def bins_generator(degree_bins):
-		bins_lat = np.arange(-90,90.1,degree_bins[0]).tolist()
-		bins_lon = np.arange(-180,180.1,degree_bins[1]).tolist()
-		return (bins_lat,bins_lon)
+	@classmethod
+	def load_from_type(cls,GeoClass=TransitionGeo,lat_spacing=None,lon_spacing=None,time_step=None):
+		trans_geo = GeoClass(lat_sep=lat_spacing,lon_sep=lon_spacing,time_step=time_step)
+		file_name = trans_geo.make_filename()
+		return cls.load(file_name)
+
+	@classmethod
+	def load(cls,filename):
+		with open(filename,'rb') as pickle_file:
+			out_data = pickle.load(pickle_file)
+		out_data = cls.new_from_old(out_data)
+		return out_data
+
+	@classmethod
+	def new_from_old(cls,transition_matrix):
+		old_trans_geo = transition_matrix.trans_geo
+		trans_geo = old_trans_geo.new_from_old(old_trans_geo)
+		row_idx,column_idx,data = scipy.sparse.find(transition_matrix)
+		return cls((data,(row_idx,column_idx)),
+			shape=(len(transition_matrix.trans_geo.total_list),
+			len(transition_matrix.trans_geo.total_list)),
+			trans_geo=trans_geo,
+			number_data=transition_matrix.number_data) 
 
 	def new_sparse_matrix(self,data):
 		row_idx,column_idx,dummy = scipy.sparse.find(self)
-		return scipy.sparse.csc_matrix((data,(row_idx,column_idx)),shape=(len(self.total_list),len(self.total_list)))             
+		return scipy.sparse.csc_matrix((data,(row_idx,column_idx)),shape=(len(self.trans_geo.total_list),len(self.trans_geo.total_list)))             
 
 	def _binopt(self, other, op):
 		""" This is included so that when sparse matrices are added together, their instance variables are maintained this code was grabbed from the scipy source with the small addition at the end"""
@@ -132,13 +229,11 @@ class BaseMat(scipy.sparse.csc_matrix):
 		   other.data,
 		   indptr, indices, data)
 		if issubclass(type(self),TransMat):
-			A = self.__class__((data, indices, indptr), shape=self.shape,total_list=self.total_list,
-				lat_spacing=self.degree_bins[1],lon_spacing=self.degree_bins[0],
-				traj_file_type=self.traj_file_type,time_step=self.time_step,number_data=self.number_data)
+			A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+				,number_data=self.number_data)
 		else:
-			A = self.__class__((data, indices, indptr), shape=self.shape,total_list=self.total_list,
-				lat_spacing=self.degree_bins[1],lon_spacing=self.degree_bins[0],
-				traj_file_type=self.traj_file_type,variable_list=self.variable_list)
+			A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+				,number_data=self.number_data)
 		A.prune()
 
 		return A
@@ -182,36 +277,23 @@ class BaseMat(scipy.sparse.csc_matrix):
 		   indptr, indices, data)
 
 		if issubclass(type(self),TransMat):
-			return self.__class__((data, indices, indptr), shape=self.shape,
-				total_list=self.total_list,lat_spacing=self.degree_bins[1],
-				lon_spacing=self.degree_bins[0],traj_file_type=self.traj_file_type,
-				time_step=self.time_step,number_data=self.number_data)
+			return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+				,number_data=self.number_data)
 		else:
-			return self.__class__((data, indices, indptr), shape=self.shape,
-				total_list=self.total_list,lat_spacing=self.degree_bins[1],
-				lon_spacing=self.degree_bins[0],traj_file_type=self.traj_file_type)
+			return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+				,number_data=self.number_data)
 
 
 
 class TransMat(BaseMat):
-	def __init__(self, arg1, shape=None,trans_geo=None,number_data=None,
-		rescale=False,**kwargs):
-		super(TransMat,self).__init__(arg1, shape=shape,trans_geo=trans_geo,**kwargs)
+	def __init__(self, arg1,number_data=None,rescale=False,**kwargs):
+		super(TransMat,self).__init__(arg1,**kwargs)
 		self.number_data = number_data
 		if rescale:
 			self.rescale()
 
-	@staticmethod
-	def load_from_type(lat_spacing=None,lon_spacing=None,time_step=None, traj_type='argo'):
-		trans_geo = TransitionGeo(lat_sep=lat_spacing,lon_sep=lon_spacing,time_step=time_step,file_type=traj_type)
-		file_name = trans_geo.make_filename()
-		return TransMat.load(file_name)
-
-	@staticmethod
-	def load(filename):
-		with open(filename,'rb') as pickle_file:
-			out_data = pickle.load(pickle_file)
-		return out_data
+	def set_trans_geo(self,trans_geo):
+		self.trans_geo = TransitionGeo.new_from_old(trans_geo)
 
 	def save(self,filename=False):
 		if not filename:
@@ -219,32 +301,6 @@ class TransMat(BaseMat):
 		with open(filename, 'wb') as pickle_file:
 			pickle.dump(self,pickle_file)
 		pickle_file.close()
-
-	def get_direction_matrix(self):
-
-		"""
-		notes: this could be made faster by looping through unique values of lat and lon and assigning intelligently
-		"""
-
-		lat_list, lon_list = zip(*self.total_list)
-		lat_list = np.array(lat_list)
-		lon_list = np.array(lon_list)
-		pos_max = 180/self.degree_bins[1] #this is the maximum number of bins possible
-		output_ns_list = []
-		output_ew_list = []
-		for (token_lat,token_lon) in self.total_list:
-			token_ns = (token_lat-np.array(lat_list))/self.degree_bins[0]
-			token_ew = (token_lon-np.array(lon_list))/self.degree_bins[1]
-			token_ew[token_ew>pos_max]=token_ew[token_ew>pos_max]-2*pos_max #the equivalent of saying -360 degrees
-			token_ew[token_ew<-pos_max]=token_ew[token_ew<-pos_max]+2*pos_max #the equivalent of saying +360 degrees
-			output_ns_list.append(token_ns)
-			output_ew_list.append(token_ew)
-		self.east_west = np.array(output_ew_list)
-		self.north_south = np.array(output_ns_list)
-		assert (self.east_west<=180/self.degree_bins[1]).all()
-		assert (self.east_west>=-180/self.degree_bins[1]).all()
-		assert (self.north_south>=-180/self.degree_bins[0]).all()
-		assert (self.north_south<=180/self.degree_bins[0]).all()
 
 	def return_mean(self):
 		row_list, column_list, data_array = scipy.sparse.find(self)
@@ -292,20 +348,28 @@ class TransMat(BaseMat):
 	def matrix_column_check(self,checksum):
 		assert (np.abs(self.sum(axis=0)-1)<checksum).all()
 
-	def reduce_resolution(self,new_degree_bins):
-		lat_mult = new_degree_bins[0]/self.degree_bins[0]
-		lon_mult = new_degree_bins[1]/self.degree_bins[1]
+	def reduce_resolution(self,lat_sep,lon_sep):
+		lat_mult = lat_sep/self.trans_geo.lat_sep
+		lon_mult = lon_sep/self.trans_geo.lon_sep
 
-		reduced_res_lat_bins,reduced_res_lon_bins = self.bins_generator(new_degree_bins)
-		lat_bins,lon_bins = zip(*self.total_list)
-		lat_idx = np.digitize(lat_bins,reduced_res_lat_bins)
-		lon_idx = np.digitize(lon_bins,reduced_res_lon_bins)
+
+		new_trans_geo = self.trans_geo.__class__(lat_sep=lat_sep,lon_sep=lon_sep,time_step=self.trans_geo.time_step,file_type=self.trans_geo.file_type)
+		reduced_res_lat_bins = new_trans_geo.get_lat_bins()
+		reduced_res_lon_bins = new_trans_geo.get_lon_bins()
+		lat_bins,lon_bins,dummy = zip(*self.trans_geo.tuple_total_list())
+		lat_idx = np.digitize(lat_bins,reduced_res_lat_bins)-1
+		lon_idx = np.digitize(lon_bins,reduced_res_lon_bins)-1
+
+		[reduced_res_lat_bins[x] for x in lat_idx]
+		[reduced_res_lon_bins[x] for x in lon_idx]
+
 		reduced_res_bins=[(reduced_res_lat_bins[i],reduced_res_lon_bins[j]) for i,j in zip(lat_idx,lon_idx)]
-		reduced_res_total_list = list(set((reduced_res_bins)))
+		reduced_res_total_list = [geopy.Point(x) for x in list(set((reduced_res_bins)))]
+		new_trans_geo.set_total_list(reduced_res_total_list)
 		translation_list = [reduced_res_total_list.index(x) for x in reduced_res_bins]
 		check = [(np.array(translation_list)==x).sum()<=(lat_mult*lon_mult) for x in range(len(reduced_res_total_list))]
 		assert all(check)
-		translation_dict = dict(zip(range(len(self.total_list)),translation_list))
+		translation_dict = dict(zip(range(len(self.trans_geo.tuple_total_list())),translation_list))
 		
 		old_row_idx,old_column_idx,old_data = scipy.sparse.find(self)
 		new_row_idx = np.array([translation_dict[ii] for ii in old_row_idx])
@@ -322,17 +386,15 @@ class TransMat(BaseMat):
 			out_col.append(col_dummy)
 			out_row.append(row_dummy)
 		mat_dim = len(reduced_res_total_list)
-		TransMat((out_data,(out_row,out_col
-			)),shape=(mat_dim,mat_dim),total_list=reduced_res_total_list,
-			lat_spacing=new_degree_bins[0],lon_spacing=new_degree_bins[1],time_step=self.time_step,number_data=None,
-			traj_file_type=self.traj_file_type,rescale=True)		
+		self.__class__((out_data,(out_row,out_col)),shape=(mat_dim,mat_dim),trans_geo=new_trans_geo
+				,number_data=self.number_data,rescale=True)	
 
 	def save_trans_matrix_to_json(self,foldername):
 		for column in range(self.shape[1]):
 			print('there are ',(self.shape[1]-column),'columns remaining')
-			p_lat,p_lon = tuple(self.total_list[column])
+			p_lat,p_lon = tuple(self.trans_geo.total_list[column])
 			data = self[:,column].data
-			lat,lon = zip(*[tuple(self.total_list[x]) for x in self[:,column].indices.tolist()])
+			lat,lon = zip(*[tuple(self.trans_geo.total_list[x]) for x in self[:,column].indices.tolist()])
 			feature_list = zip(lat,lon,data)
 			geojson = {'type':'FeatureCollection', 'features':[]}
 			for token in feature_list:
