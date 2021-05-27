@@ -158,10 +158,18 @@ class WithholdingGeo(CaseGeo):
 		self.description = str(percentage)+'_'+str(idx_number)
 		super().__init__(*args,**kwargs)
 
+	@classmethod
+	def new_from_old(cls,trans_geo):
+		return trans_geo
+
 class SOSEWithholdingGeo(SOSECaseGeo):
 	def __init__(self,percentage,idx_number,*args,**kwargs):
 		self.description = str(percentage)+'_'+str(idx_number)
 		super().__init__(*args,**kwargs)
+
+	@classmethod
+	def new_from_old(cls,trans_geo):
+		return trans_geo
 
 class BaseMat(scipy.sparse.csc_matrix):
 	"""Base class for transition and correlation matrices, we include the timestep moniker for posterity. Time step for correlation matrices 
@@ -293,7 +301,7 @@ class TransMat(BaseMat):
 			self.rescale()
 
 	def set_trans_geo(self,trans_geo):
-		self.trans_geo = TransitionGeo.new_from_old(trans_geo)
+		self.trans_geo = trans_geo.__class__.new_from_old(trans_geo)
 
 	def save(self,filename=False):
 		if not filename:
@@ -387,7 +395,7 @@ class TransMat(BaseMat):
 			out_row.append(row_dummy)
 		mat_dim = len(reduced_res_total_list)
 		self.__class__((out_data,(out_row,out_col)),shape=(mat_dim,mat_dim),trans_geo=new_trans_geo
-				,number_data=self.number_data,rescale=True)	
+				,number_data=None,rescale=True)	
 
 	def save_trans_matrix_to_json(self,foldername):
 		for column in range(self.shape[1]):

@@ -2,7 +2,7 @@ from GeneralUtilities.Compute.list import find_nearest,flat_list
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
 from GeneralUtilities.Data.lagrangian.sose.SOSE_read import SOSEReader,aggregate_sose_list
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
-from trans_read import TransitionGeo,TransMat,WinterGeo,SummerGeo,GPSGeo,ARGOSGeo,WinterSOSEGeo,SummerSOSEGeo,SOSEGeo
+from TransitionMatrix.Utilities.Compute.trans_read import TransitionGeo,TransMat,WinterGeo,SummerGeo,GPSGeo,ARGOSGeo,WinterSOSEGeo,SummerSOSEGeo,SOSEGeo, SOSEWithholdingGeo, WithholdingGeo
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -277,15 +277,17 @@ def mask_compute(pos_obj,trans_geo):
 
 def withholding_calc():
 	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,WithholdingGeo),(aggregate_sose_list,SOSEReader,SOSEWithholdingGeo)]:
-		ReadToken.all_dict = []
+		BaseRead.all_dict = []
 		agg_function()
 		for degree_bins in [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for percentage in [0.95,0.9,0.85,0.8,0.75,0.7]:
-				for time_step in [30,60,90,120,150,180]:
+				for time_step in [30,60,90]:
 					for k in range(10):
-						all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(percentage))
 						trans_geo = GeoToken(percentage,k,lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
+						if os.path.isfile(trans_geo.make_filename()):
+							continue
+						all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(percentage))
 						start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 						pos_obj = PosBinList(start_bin_list,end_bin_list)
 						mask = mask_compute(pos_obj,trans_geo)
@@ -295,8 +297,8 @@ def withholding_calc():
 						transition_matrix.save()
 
 def base_calc():
-	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,TransitionGeo),(aggregate_sose_list,SOSEReader,SOSEWithholdingGeo)]:
-		ReadToken.all_dict = []
+	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,TransitionGeo),(aggregate_sose_list,SOSEReader,SOSEGeo)]:
+		BaseRead.all_dict = []
 		agg_function()
 		for degree_bins in [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
@@ -327,6 +329,7 @@ def seasonal_calc():
 					mask = mask_compute(pos_obj,trans_geo)
 					col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 					transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
+					assert transition_matrix.trans_geo.make_filename() == trans_geo.make_filename()
 					transition_matrix.asfptype()
 					transition_matrix.save()
 
@@ -345,5 +348,6 @@ def argos_gps_calc():
 				mask = mask_compute(pos_obj,trans_geo)
 				col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 				transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
+				assert transition_matrix.trans_geo.make_filename() == trans_geo.make_filename()
 				transition_matrix.asfptype()
 				transition_matrix.save()
