@@ -12,6 +12,8 @@ import scipy.spatial as spatial
 import geopy
 import scipy.sparse.linalg
 import copy
+import os
+
 
 class SetToDealWithGeo(set):
 	def __init__(self,item):
@@ -279,11 +281,11 @@ def withholding_calc():
 	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,WithholdingGeo),(aggregate_sose_list,SOSEReader,SOSEWithholdingGeo)]:
 		BaseRead.all_dict = []
 		agg_function()
-		for degree_bins in [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
+		for degree_bins in [(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for percentage in [0.95,0.9,0.85,0.8,0.75,0.7]:
 				for time_step in [30,60,90]:
-					for k in range(10):
+					for k in range(5):
 						trans_geo = GeoToken(percentage,k,lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
 						if os.path.isfile(trans_geo.make_filename()):
 							continue
@@ -298,13 +300,15 @@ def withholding_calc():
 
 def base_calc():
 	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,TransitionGeo),(aggregate_sose_list,SOSEReader,SOSEGeo)]:
-		BaseRead.all_dict = []
+		BaseRead.all_dict = {}
 		agg_function()
 		for degree_bins in [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for time_step in [30,60,90,120,150,180]:
-				all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(1))
 				trans_geo = GeoToken(lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
+				if os.path.isfile(trans_geo.make_filename()):
+					continue
+				all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(1))
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 				pos_obj = PosBinList(start_bin_list,end_bin_list)
 				mask = mask_compute(pos_obj,trans_geo)
@@ -322,8 +326,10 @@ def seasonal_calc():
 			lat_sep,lon_sep = degree_bins
 			for time_step in [30,60,90,120,150,180]:
 				for GeoToken,ProfileToken in token_list:
-					all_dict = ProfileToken(ReadToken.get_subsampled_float_dict(1))
 					trans_geo = GeoToken(lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
+					if os.path.isfile(trans_geo.make_filename()):
+						continue
+					all_dict = ProfileToken(ReadToken.get_subsampled_float_dict(1))
 					start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 					pos_obj = PosBinList(start_bin_list,end_bin_list)
 					mask = mask_compute(pos_obj,trans_geo)

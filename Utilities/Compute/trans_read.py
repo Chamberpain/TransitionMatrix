@@ -44,10 +44,10 @@ class TransitionGeo(object):
 		# total list must be composed of geopy.Points 
 		assert (set(lats).issubset(set(self.get_lat_bins())))&(set(lons).issubset(set(self.get_lon_bins())))
 		# total list must be a subset of the coordinate lists
-		self.total_list = total_list
+		self.total_list = total_list #make sure they are unique
 
 	def tuple_total_list(self):
-		return [tuple(x) for x in self.total_list]
+		return [tuple(x)[:2] for x in self.total_list]
 
 	def get_lat_bins(self):
 		lat_bins = np.arange(-90,90.1,self.lat_sep)
@@ -334,6 +334,15 @@ class TransMat(BaseMat):
 		self.data+= direction_mat[row_idx,column_idx]
 		self.rescale()
 
+	def new_coordinate_list(self,new_total_list):
+		trans_geo = self.trans_geo
+		matrix_idx = [self.trans_geo.total_list.index(x) for x in new_total_list]
+		new_matrix = self[matrix_idx,:]
+		new_matrix = new_matrix[:,matrix_idx]
+		new_matrix.set_trans_geo(trans_geo)
+		new_matrix.trans_geo.set_total_list(new_total_list)
+		new_matrix.rescale()
+		return new_matrix
 
 	def rescale(self,checksum=10**-2):
 		div_array = np.abs(self.sum(axis=0)).tolist()[0]
@@ -360,21 +369,17 @@ class TransMat(BaseMat):
 		lat_mult = lat_sep/self.trans_geo.lat_sep
 		lon_mult = lon_sep/self.trans_geo.lon_sep
 
-
-		new_trans_geo = self.trans_geo.__class__(lat_sep=lat_sep,lon_sep=lon_sep,time_step=self.trans_geo.time_step,file_type=self.trans_geo.file_type)
+		new_trans_geo = self.trans_geo.__class__(lat_sep=lat_sep,lon_sep=lon_sep,time_step=self.trans_geo.time_step)
 		reduced_res_lat_bins = new_trans_geo.get_lat_bins()
 		reduced_res_lon_bins = new_trans_geo.get_lon_bins()
-		lat_bins,lon_bins,dummy = zip(*self.trans_geo.tuple_total_list())
+		lat_bins,lon_bins = zip(*self.trans_geo.tuple_total_list())
 		lat_idx = np.digitize(lat_bins,reduced_res_lat_bins)-1
 		lon_idx = np.digitize(lon_bins,reduced_res_lon_bins)-1
-
-		[reduced_res_lat_bins[x] for x in lat_idx]
-		[reduced_res_lon_bins[x] for x in lon_idx]
 
 		reduced_res_bins=[(reduced_res_lat_bins[i],reduced_res_lon_bins[j]) for i,j in zip(lat_idx,lon_idx)]
 		reduced_res_total_list = [geopy.Point(x) for x in list(set((reduced_res_bins)))]
 		new_trans_geo.set_total_list(reduced_res_total_list)
-		translation_list = [reduced_res_total_list.index(x) for x in reduced_res_bins]
+		translation_list = [new_trans_geo.tuple_total_list().index(x) for x in reduced_res_bins]
 		check = [(np.array(translation_list)==x).sum()<=(lat_mult*lon_mult) for x in range(len(reduced_res_total_list))]
 		assert all(check)
 		translation_dict = dict(zip(range(len(self.trans_geo.tuple_total_list())),translation_list))
@@ -390,11 +395,11 @@ class TransMat(BaseMat):
 			data_dummy = old_data[mask]
 			assert len(data_dummy)<=(lat_mult*lon_mult)**2
 #squared because of the possibilty of inter box exchange 
-			out_data.append(data_dummy.sum()*1/(lat_mult*lon_mult))
+			out_data.append(data_dummy.sum())
 			out_col.append(col_dummy)
 			out_row.append(row_dummy)
 		mat_dim = len(reduced_res_total_list)
-		self.__class__((out_data,(out_row,out_col)),shape=(mat_dim,mat_dim),trans_geo=new_trans_geo
+		return self.__class__((out_data,(out_row,out_col)),shape=(mat_dim,mat_dim),trans_geo=new_trans_geo
 				,number_data=None,rescale=True)	
 
 	def save_trans_matrix_to_json(self,foldername):
