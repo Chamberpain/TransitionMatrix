@@ -1,9 +1,9 @@
-from GeneralUtilities.Compute.list import find_nearest,flat_list
+from GeneralUtilities.Compute.list import find_nearest,flat_list,LonList,LatList,GeoList
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
 from TransitionMatrix.Utilities.Compute.__init__ import ROOT_DIR
 from GeneralUtilities.Filepath.instance import FilePathHandler
-from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup
+from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy,SOSECartopy
 
 import numpy as np
 import scipy.sparse
@@ -19,6 +19,7 @@ file_handler = FilePathHandler(ROOT_DIR,'trans_read')
 
 class TransitionGeo(object):
 	""" geo information and tools for transition matrices """
+	plot_class = GlobalCartopy
 	file_type = 'argo'
 	number_vmin=0
 	number_vmax=300
@@ -40,14 +41,10 @@ class TransitionGeo(object):
 		lats,lons,dummy = zip(*[tuple(x) for x in total_list])
 		assert isinstance(total_list,list) 
 		#total list must be a list
-		assert all([isinstance(x,geopy.Point) for x in total_list]) 
-		# total list must be composed of geopy.Points 
 		assert (set(lats).issubset(set(self.get_lat_bins())))&(set(lons).issubset(set(self.get_lon_bins())))
 		# total list must be a subset of the coordinate lists
+		total_list = GeoList(total_list)
 		self.total_list = total_list #make sure they are unique
-
-	def tuple_total_list(self):
-		return [tuple(x)[:2] for x in self.total_list]
 
 	def get_lat_bins(self):
 		lat_bins = np.arange(-90,90.1,self.lat_sep)
@@ -95,13 +92,13 @@ class TransitionGeo(object):
 		"""
 		notes: this could be made faster by looping through unique values of lat and lon and assigning intelligently
 		"""
-		(lat_list,lon_list,dummy) = zip(*self.tuple_total_list())
+		lat_list,lon_list = zip(*self.total_list.tuple_total_list())
 		lat_list = np.array(lat_list)
 		lon_list = np.array(lon_list)
 		pos_max = 180/self.lon_sep #this is the maximum number of bins possible
 		output_ns_list = []
 		output_ew_list = []
-		for (token_lat,token_lon,dummy) in self.tuple_total_list():
+		for token_lat,token_lon in self.total_list.tuple_total_list():
 			token_ns = (token_lat-np.array(lat_list))/self.lat_sep
 			token_ew = (token_lon-np.array(lon_list))/self.lon_sep
 			token_ew[token_ew>pos_max]=token_ew[token_ew>pos_max]-2*pos_max #the equivalent of saying -360 degrees
@@ -122,6 +119,7 @@ class TransitionGeo(object):
 		return new_trans_geo
 
 class SOSEGeo(TransitionGeo):
+	plot_class = SOSECartopy
 	file_type = 'SOSE'
 	number_vmin=0
 	number_vmax=900
@@ -174,8 +172,8 @@ class SOSEWithholdingGeo(SOSECaseGeo):
 class BaseMat(scipy.sparse.csc_matrix):
 	"""Base class for transition and correlation matrices, we include the timestep moniker for posterity. Time step for correlation matrices 
 	means the L scaling """
-	def __init__(self, arg1,shape=None,trans_geo=None,**kwargs):
-		super(BaseMat,self).__init__(arg1,shape=shape)
+	def __init__(self, *args,trans_geo=None,**kwargs):
+		super().__init__(*args,**kwargs)
 		if trans_geo:
 			self.set_trans_geo(trans_geo)
 
@@ -205,7 +203,10 @@ class BaseMat(scipy.sparse.csc_matrix):
 
 	def new_sparse_matrix(self,data):
 		row_idx,column_idx,dummy = scipy.sparse.find(self)
-		return scipy.sparse.csc_matrix((data,(row_idx,column_idx)),shape=(len(self.trans_geo.total_list),len(self.trans_geo.total_list)))             
+		return BaseMat((data,(row_idx,column_idx)),shape=(len(self.trans_geo.total_list),len(self.trans_geo.total_list)))             
+
+	def mean(self,axis=0):
+		return np.array(self.sum(axis=axis)/(self!=0).sum(axis=axis)).flatten()
 
 	def _binopt(self, other, op):
 		""" This is included so that when sparse matrices are added together, their instance variables are maintained this code was grabbed from the scipy source with the small addition at the end"""
@@ -294,11 +295,40 @@ class BaseMat(scipy.sparse.csc_matrix):
 
 
 class TransMat(BaseMat):
-	def __init__(self, arg1,number_data=None,rescale=False,**kwargs):
-		super(TransMat,self).__init__(arg1,**kwargs)
+	def __init__(self, *args,number_data=None,rescale=False,**kwargs):
+		super().__init__(*args,**kwargs)
 		self.number_data = number_data
 		if rescale:
 			self.rescale()
+
+	def distribution_and_mean_of_column(self,col_idx,pad = 8):
+		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
+		idx_lat,idx_lon,dummy = tuple(self.trans_geo.total_list[col_idx])
+		east_west, north_south = self.return_mean()
+		x_mean = east_west[col_idx]+idx_lon
+		y_mean = north_south[col_idx]+idx_lat
+		XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=pad).get_map()
+		plt.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()))
+		plt.colorbar()
+		plt.scatter(x_mean,y_mean,c='pink',linewidths=5,marker='x',s=80,zorder=10)
+
+	def remove_small_values(self,value):
+		row_idx,column_idx,data = scipy.sparse.find(self)
+		mask = data>value
+		row_idx = row_idx[mask]
+		column_idx = column_idx[mask]
+		data = data[mask]
+		return self.__class__((data,(row_idx,column_idx)),shape=self.shape,trans_geo=self.trans_geo
+				,number_data=self.number_data,rescale=True)	
+
+	def multiply(self,mult,value=0.02):
+		mat1 = self.remove_small_values(self.data.mean()/25)
+		mat2 = self.remove_small_values(self.data.mean()/25)
+		for k in range(mult):
+			print('I am at ',k,' step in the multiplication')
+			mat_holder = mat1.dot(mat2)
+			mat1 = mat_holder.remove_small_values(mat_holder.data.mean()/25)
+		return mat1
 
 	def set_trans_geo(self,trans_geo):
 		self.trans_geo = trans_geo.__class__.new_from_old(trans_geo)
@@ -312,12 +342,32 @@ class TransMat(BaseMat):
 
 	def return_mean(self):
 		row_list, column_list, data_array = scipy.sparse.find(self)
-		self.get_direction_matrix()
-		east_west_data = self.east_west[row_list,column_list]*data_array
-		north_south_data = self.north_south[row_list,column_list]*data_array
-		east_west = self.new_sparse_matrix(east_west_data)
-		north_south = self.new_sparse_matrix(north_south_data)        
-		return(east_west,north_south)
+		try:
+			self.trans_geo.east_west
+		except AttributeError:
+			self.trans_geo.get_direction_matrix()
+		ew_scaled = self.new_sparse_matrix(self.trans_geo.east_west[row_list, column_list]*data_array*self.trans_geo.lon_sep).sum(axis=0)
+		ew_scaled = np.array(ew_scaled).flatten()
+		ns_scaled = self.new_sparse_matrix(self.trans_geo.north_south[row_list, column_list]*data_array*self.trans_geo.lon_sep).sum(axis=0)
+		ns_scaled = np.array(ns_scaled).flatten()
+		return(ew_scaled,ns_scaled)
+
+	def return_std(self):
+		ew_out = []
+		ns_out = []
+		row_list, column_list, data_array = scipy.sparse.find(self)
+		try:
+			self.trans_geo.east_west
+		except AttributeError:
+			self.trans_geo.get_direction_matrix()
+		ew = self.new_sparse_matrix(self.trans_geo.east_west[row_list, column_list]*data_array*self.trans_geo.lon_sep)
+		ns = self.new_sparse_matrix(self.trans_geo.north_south[row_list, column_list]*data_array*self.trans_geo.lon_sep)
+		for k in range(ew.shape[0]):
+			ew_out.append(ew[:,k].data.std())
+			ns_out.append(ns[:,k].data.std())
+		ew_out = np.array(ew_out).flatten()
+		ns_out = np.array(ns_out).flatten()
+		return (ew_out,ns_out)
 
 	def add_noise(self,noise=0.05):
 		"""

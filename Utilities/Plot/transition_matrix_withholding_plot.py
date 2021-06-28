@@ -11,139 +11,93 @@ def argos_gps_plot():
 	with open(data_handler.tmp_file('argos_gps_data'), 'rb') as fp:
 		datalist = pickle.load(fp)   
 	fp.close()
-	argos_eig_list = []
-	gps_eig_list = []
-	argos_list,gps_list,zip_object,l2_mean,l2_std = zip(*datalist)
-	lats,lons,time_step,dummy = zip(*argos_list)
-	for x in zip_object:
-		argos,gps = zip(*x)
-		argos_eig_list.append(argos)
-		gps_eig_list.append(gps)
-	for k in range(len(argos_eig_list)):
-		label = str(lats[k])+'_'+str(lons[k])+'_'+str(time_step[k])
-		plt.plot(np.sort(argos_eig_list[k])[::-1],label=label)
-		plt.plot(np.sort(gps_eig_list[k])[::-1])
-	plt.xlim([0,1200])
-	plt.ylim([0,1])
-	plt.legend()
-	plt.show()
+	plot_style_dict = {'argos':'--','gps':':'}
+	plot_color_dict = {(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
+	base_mat,subsampled_list,l2_mean,l2_std = zip(*datalist)
+	lats,lons,time_step,pos_type = zip(*subsampled_list)
+	pos_type = ['argos','gps']*(int(len(pos_type)/2))
+	tuple_list = list(zip(lats,lons))
+	for positioning in np.unique(pos_type):
+		for grid in list(set(tuple_list)):
+			lat_mask = np.array([grid[0]==x for x in lats])
+			lon_mask = np.array([grid[1]==x for x in lons])
+			season_mask = np.array([positioning==x for x in pos_type])
+			mask = lat_mask&lon_mask&season_mask
+			out = np.array(l2_mean)[mask]
+			print('I am plotting ',positioning)
+			plt.plot(np.unique(time_step),out,linestyle=plot_style_dict[positioning],color=plot_color_dict[grid])
+	plt.xlim(30,180)
+	plt.xlabel('Timestep')
+	plt.ylabel('Mean Difference')
+
+def seasonal_plot():
+	with open(data_handler.tmp_file('seasonal_data'), 'rb') as fp:
+		datalist = pickle.load(fp)   
+	fp.close()
+	plot_style_dict = {'summer':'--','winter':':'}
+	plot_color_dict = {(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
+	base_mat,subsampled_list,l2_mean,l2_std = zip(*datalist)
+	lats,lons,time_step,pos_type = zip(*subsampled_list)
+	pos_type = ['summer','winter']*(int(len(pos_type)/2))
+	tuple_list = list(zip(lats,lons))
+	for season in np.unique(pos_type):
+		for grid in list(set(tuple_list)):
+			lat_mask = np.array([grid[0]==x for x in lats])
+			lon_mask = np.array([grid[1]==x for x in lons])
+			season_mask = np.array([season==x for x in pos_type])
+			mask = lat_mask&lon_mask&season_mask
+			out = np.array(l2_mean)[mask]
+			print('I am plotting ',season)
+			plt.plot(np.unique(time_step),out,linestyle=plot_style_dict[season],color=plot_color_dict[grid])
+	plt.xlim(30,180)
+	plt.xlabel('Timestep')
+	plt.ylabel('Mean Difference')
 
 def resolution_difference_plot():
 	with open(data_handler.tmp_file('resolution_difference_data'), 'rb') as fp:
-		datalist = pickle.load(fp)
-	inner,outer,traj_file_type, actual_data = zip(*datalist)
-	inner = np.array([str(x) for x in inner])
-	outer = np.array([str(x) for x in outer])
-	traj_file_type = np.array(traj_file_type)
-	actual_data = np.array(actual_data)
-	for plot_type in np.unique(traj_file_type):
-		plt.figure()
-		plt.title(plot_type+' Eigen Spectrum')
-		mean_list = []
-		std_list = []
-		mask = traj_file_type == plot_type
-		inner_holder = inner[mask]
-		outer_holder = outer[mask]
-		data_holder = actual_data[mask]
-		for n,(inn,out,dat) in enumerate(zip(inner_holder, outer_holder, data_holder)):
-			plot_label = str(inn)+','+str(out)
-			eigs,l2_mean,l2_std = dat
-			mean_list.append(l2_mean)
-			std_list.append(std_list)
-			eigen_spectrum,test_eigen_spectrum = zip(*eigs)
-			eigen_spectrum = np.sort([np.absolute(x) for x in eigen_spectrum])
-			test_eigen_spectrum = np.sort([np.absolute(x) for x in test_eigen_spectrum])
-			eig_x_coord = eigen_spectrum[eigen_spectrum>0.8]
-			eig_len = len(eig_x_coord)
-			diff = eigen_spectrum[-eig_len:]-test_eigen_spectrum[-eig_len:]
-			plt.plot(eig_x_coord,diff,label=plot_label)
-	plt.savefig(plot_handler.out_file('res_difference_eig'))
-	plt.close()
+		datalist = pickle.load(fp)   
+	fp.close()
+	plot_style_dict = {'argo':'--','SOSE':':'}
+	plot_color_dict = {(1,1):'teal',(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
+	ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,lat,lon,time,pos_type = zip(*datalist)
+	for system in ['argo']:
+		for grid in list(plot_color_dict.keys()):
+			lat_mask = np.array([grid[0]==x for x in lat])
+			lon_mask = np.array([grid[1]==x for x in lon])
+			system_mask = np.array([system==x for x in pos_type])
+			mask = lat_mask&lon_mask&system_mask
+			ew_mean_diff_holder = np.array(ew_mean_diff)[mask]
+			ns_mean_diff_holder = np.array(ns_mean_diff)[mask]
+			ew_std_diff_holder = np.array(ew_std_diff)[mask]
+			ns_std_diff_holder = np.array(ns_std_diff)[mask]
 
-def resolution_difference_plot():
-	with open(data_handler.tmp_file('resolution_difference_data'),'rb') as fp:
-		datalist = pickle.load(fp)
-	inner,outer,traj_file_type,actual_data = zip(*datalist)
-	q,residual_mean,residual_std = zip(*actual_data)
-	inner_lat,inner_lon = zip(*inner)
-	outer_lat,outer_lon = zip(*outer)
-	x_coord = np.array(outer_lon)/np.array(inner_lon)
-	y_coord = np.array(outer_lat)/np.array(inner_lat)
-
-
-	label_list = [str(x[0])+' to '+str(x[1]) for x in zip(inner,outer)]
-	colors = cm.rainbow(np.linspace(0, 1, len(x_coord)))
-	for n,plot_type in enumerate(np.unique(traj_file_type).tolist()):
-		fig = plt.figure()
-		ax = fig.add_subplot(1,1,1)
-		mask = np.array(traj_file_type) == plot_type
-		mean_token = np.array(residual_mean)[mask]
-		for x_coord_token,y_coord_token,mean_token,std_token,label in zip(np.array(x_coord)[mask],np.array(y_coord)[mask],np.array(residual_mean)[mask],np.array(residual_std)[mask],np.array(label_list)[mask]):
-			if n == 0:
-				ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
-				plt.title('Argo Resolution Difference Uncertainty')
-			if n ==1:
-				ax.errorbar(x_coord_token,y_coord_token,yerr=std_token*25,xerr=std_token*25,marker = 'o',markersize=mean_token*50000,zorder=1/mean_token,label=label)
-				plt.title('SOSE Resolution Difference Uncertainty')
-		plt.xlabel('Ratio of Longitude Resolution')
-		plt.ylabel('Ratio of Latitude Resolution')
-		plt.legend()
-
-	ax.set_xlabel('Comparison Matrix Timestep')
-	ax.set_ylabel('Mean L2 Norm Difference')
-	plt.legend()
-	plt.savefig(plot_handler.out_file('res_difference_l2'))
-	plt.close()
+			out = np.sqrt(ew_std_diff_holder**2+ns_std_diff_holder**2)
+			print('I am plotting ',system)
+			plt.plot(np.unique(time),out,linestyle=plot_style_dict[system],color=plot_color_dict[grid])
+	plt.xlim(30,120)
+	plt.xlabel('Timestep')
+	plt.ylabel('Mean Difference')
 
 def date_difference_plot():
-	with open('transition_matrix_datespace_data.pickle', 'rb') as fp:
+	with open(data_handler.tmp_file('datespace_data'), 'rb') as fp:
 		datalist = pickle.load(fp)
-	date,traj_plot,actual_data = zip(*datalist)
-	q,residual_mean,residual_std = zip(*actual_data)
-
-	date = np.array(date)
-	traj_plot = np.array(traj_plot)
-	residual_mean = np.array(residual_mean)
-	residual_std = np.array(residual_std)
-	fig = plt.figure()
-	ax = fig.add_subplot(1,1,1)
-	for n,plot_type in enumerate(np.unique(traj_plot).tolist()):
-		mask = traj_plot == plot_type
-		date_token = date[mask]
-		mean_token = residual_mean[mask]
-		std_token = residual_std[mask]
-		if n == 0:
-			ax.errorbar(date_token,mean_token, yerr=std_token, fmt='o',markersize=12,label=plot_type)
-		if n ==1:
-			ax.errorbar(date_token,mean_token, yerr=std_token, fmt='o',markersize=6,label=plot_type,zorder=10,alpha =.8)
-
-	ax.set_xlabel('Comparison Matrix Timestep')
-	ax.set_ylabel('Mean L2 Norm Difference')
-	plt.legend()
-	plt.savefig(plot_handler.out_file('date_difference_l2'))
-	plt.close()
-
-	for plot_type in np.unique(traj_plot).tolist():   
-		plt.figure()
-		plt.title('Difference in Eigen Spectrum for '+plot_type+' Transition Matrices')
-		plt.xlabel('Original Eigen Value')
-		plt.ylabel('Difference')
-		mask = traj_plot==plot_type
-		date_token = date[mask]
-		q_token = np.array(q)[mask]
-		for n,d in enumerate(date_token):
-			plot_label = str(d)+' days'
-			eigen_spectrum,test_eigen_spectrum = zip(*q_token[n])
-			eigen_spectrum = np.sort([np.absolute(x) for x in eigen_spectrum])
-			test_eigen_spectrum = np.sort([np.absolute(x) for x in test_eigen_spectrum])
-			mask = eigen_spectrum>0.8
-			
-			diff = eigen_spectrum[mask]-test_eigen_spectrum[mask]
-
-			plt.plot(eigen_spectrum[mask],diff,label=plot_label)
-		plt.legend()
-		plt.savefig(plot_handler.out_file('date_difference_'+plot_type))
-		plt.close()
+	plot_style_dict = {'argo':'--','SOSE':':'}
+	plot_color_dict = {(1,1):'teal',(1,2):'purple',(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
+	inner,outer,l2_mean,l2_std = zip(*datalist)
+	lats,lons,time_step,pos_type = zip(*inner)
+	tuple_list = list(zip(lats,lons))
+	for system in np.unique(pos_type):
+		for grid in list(set(tuple_list)):
+			lat_mask = np.array([grid[0]==x for x in lats])
+			lon_mask = np.array([grid[1]==x for x in lons])
+			system_mask = np.array([system==x for x in pos_type])
+			mask = lat_mask&lon_mask&system_mask
+			out = np.array(l2_mean)[mask]
+			print('I am plotting ',system)
+			plt.plot(np.unique(time_step),out,linestyle=plot_style_dict[system],color=plot_color_dict[grid])
+	plt.xlim(30,180)
+	plt.xlabel('Timestep')
+	plt.ylabel('Mean Difference')
 
 
 def data_withholding_plot():

@@ -24,28 +24,6 @@ class TransPlot(TransMat):
 	def set_trans_geo(self,trans_geo):
 		self.trans_geo = PlotGeo.new_from_old(trans_geo)
 
-	def remove_small_values(self,value):
-		row_idx,column_idx,data = scipy.sparse.find(self)
-		mask = data>value
-		row_idx = row_idx[mask]
-		column_idx = column_idx[mask]
-		data = data[mask]
-		arg = scipy.sparse.csc_matrix((data,(row_idx,column_idx)),shape=(len(self.total_list),len(self.total_list)))
-		return TransPlot(arg,shape = self.shape,total_list=self.total_list,lat_spacing=self.degree_bins[0],
-			lon_spacing=self.degree_bins[1],traj_file_type=self.traj_file_type,rescale=False)
-
-	def multiply(self,mult,value=0.02):
-		mat1 = self.remove_small_values(self.data.mean()/25)
-		mat2 = self.remove_small_values(self.data.mean()/25)
-		for k in range(mult):
-			print('I am at ',k,' step in the multiplication')
-			mat_holder = mat1.dot(mat2)
-			mat1 = TransPlot(mat_holder,shape = self.shape,total_list=self.total_list,
-			lat_spacing=self.degree_bins[0],lon_spacing=self.degree_bins[1],
-			traj_file_type=self.traj_file_type,rescale=True)
-			mat1 = mat1.remove_small_values(mat1.data.mean()/10)
-		return mat1
-
 	def number_plot(self): 
 		number_matrix = self.new_sparse_matrix(self.number_data)
 		k = number_matrix.sum(axis=0)
@@ -66,6 +44,18 @@ class TransPlot(TransMat):
 		plt.annotate('B', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 		plt.savefig(self.trans_geo.make_filename('number'))
 		plt.close()
+
+	def distribution_and_mean_of_column(self,col_idx):
+		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
+		idx_lat,idx_lon,dummy = tuple(self.trans_geo.total_list[col_idx])
+		east_west, north_south = self.return_mean()
+		x_mean = east_west[col_idx]+idx_lon
+		y_mean = north_south[col_idx]+idx_lat
+		XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=20).get_map()
+		plt.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()))
+		plt.colorbar()
+		plt.scatter(x_mean,y_mean,c='pink',linewidths=5,marker='x',s=80,zorder=10)
+
 
 	def return_standard_error(self):
 		number_matrix = self.new_sparse_matrix(self.number_data)
@@ -195,26 +185,19 @@ class TransPlot(TransMat):
 
 	def quiver_plot(self):
 		row_list, column_list, data_array = scipy.sparse.find(self)
-		self.get_direction_matrix()
-		bins_lat,bins_lon = self.bins_generator(self.degree_bins)
-		XX,YY = np.meshgrid(bins_lon,bins_lat)
+		self.trans_geo.get_direction_matrix()
+
+		XX,YY = self.trans_geo.get_coords()
 
 
-		east_west_data = self.east_west[row_list,column_list]*data_array
-		north_south_data = self.north_south[row_list,column_list]*data_array
+		east_west_data = self.trans_geo.east_west[row_list,column_list]*data_array
+		north_south_data = self.trans_geo.north_south[row_list,column_list]*data_array
 		east_west = self.new_sparse_matrix(east_west_data)
 		north_south = self.new_sparse_matrix(north_south_data)
 
-		eastwest_mean = []
-		northsouth_mean = []
-		for k in range(self.shape[0]):
-			eastwest_mean.append(east_west[:,k].data.mean())
-			northsouth_mean.append(north_south[:,k].data.mean())
 
-
-
-		quiver_e_w = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(eastwest_mean)*self.degree_bins[0]*111/(self.time_step*24))
-		quiver_n_s = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(northsouth_mean)*self.degree_bins[0]*111/(self.time_step*24))
+		quiver_e_w = self.trans_geo.transition_vector_to_plottable(east_west.mean(axis=0)*self.trans_geo.lon_sep*111/(self.trans_geo.time_step*24))
+		quiver_n_s = self.trans_geo.transition_vector_to_plottable(north_south.mean(axis=0)*self.trans_geo.lat_sep*111/(self.trans_geo.time_step*24))
 
 
 		std_number = 1/4.
@@ -511,7 +494,6 @@ def SOCCOM_death_plot():
 	plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/survival')
 	plt.close()
 
-
 def number_matrix_plot():
 	import sys
 	from PIL import Image
@@ -562,77 +544,7 @@ def eigen_spectrum_plot():
 		plt.savefig(holder.plot_folder()+'eigen_time_plot')
 		plt.close()
 
-def bias_plot():
-	from transition_matrix.compute.compute_utils import matrix_size_match    
-	for traj_type in ['SOSE','argo']:
-		error_list = []
-		for lat,lon in [(1,1),(2,2),(3,3),(4,4),(2,3),(3,6)]:
-			for time, multiplyer in [(30,11),(60,5),(90,3),(120,2)]:
-				holder_low_res = TransPlot.load_from_type(lon,lat,time,traj_type=traj_type)
-				holder_low_res = holder_low_res.multiply(multiplyer)        
-				holder_high_res = TransPlot.load_from_type(lon,lat,180,traj_type=traj_type)
-				holder_high_res = holder_high_res.multiply(1)        
-
-				holder_low_res,holder_high_res = matrix_size_match(holder_low_res,holder_high_res)
-				east_west_lr, north_south_lr = holder_low_res.return_mean()
-				east_west_hr, north_south_hr = holder_high_res.return_mean()
-
-				list_low_res = []
-				list_high_res = []
-				for i in range(holder_low_res.shape[0]):
-					list_low_res.append((east_west_lr[:,i].data.mean(),north_south_lr[:,i].data.mean()))
-					list_high_res.append((east_west_hr[:,i].data.mean(),north_south_hr[:,i].data.mean()))
-				e_w_lr, n_s_lr = zip(*list_low_res)
-				e_w_hr, n_s_hr = zip(*list_high_res)
-				e_w_diff = np.array(e_w_lr)-np.array(e_w_hr)
-				n_s_diff = np.array(n_s_lr)-np.array(n_s_hr)
-				total_diff = np.sqrt(e_w_diff**2+n_s_diff**2)
-
-				holder_low_res = TransPlot.load_from_type(lon,lat,time)
-				bins_lat,bins_lon = holder_low_res.bins_generator(holder_low_res.degree_bins)
-				XX,YY,m = basemap_setup(bins_lat,bins_lon,holder_high_res.traj_file_type)
-				plottable = transition_vector_to_plottable(bins_lat,bins_lon,holder_high_res.total_list,e_w_diff)
-				m.pcolormesh(XX,YY,np.ma.masked_array(plottable,mask=np.abs(plottable)>(e_w_diff.mean()+2*e_w_diff.std())))
-				plt.colorbar()
-				plt.savefig(holder_low_res.plot_folder()+'e-w-diff_high_temp_res')
-				plt.close()
-
-				XX,YY,m = basemap_setup(bins_lat,bins_lon,holder_high_res.traj_file_type)
-				plottable = transition_vector_to_plottable(bins_lat,bins_lon,holder_high_res.total_list,n_s_diff)
-				m.pcolormesh(XX,YY,np.ma.masked_array(plottable,mask=np.abs(plottable)>(n_s_diff.mean()+2*n_s_diff.std())))
-				plt.colorbar()
-				plt.savefig(holder_low_res.plot_folder()+'n-s-diff_high_temp_res')
-				plt.close()
-
-				XX,YY,m = basemap_setup(bins_lat,bins_lon,holder_high_res.traj_file_type)
-				plottable = transition_vector_to_plottable(bins_lat,bins_lon,holder_high_res.total_list,total_diff)
-				m.pcolormesh(XX,YY,np.ma.masked_array(plottable,mask=np.abs(plottable)>(total_diff.mean()+2*total_diff.std())))
-				plt.colorbar()
-				plt.savefig(holder_low_res.plot_folder()+'total-diff_high_temp_res')
-				plt.close()
-				error_list.append((lat,lon,time,total_diff.mean(),total_diff.std()))
-		start_idx = (np.array(range(6)))*4
-		end_idx = (np.array(range(6))+1)*4
-		fig,ax = plt.subplots()
-		for ii,kk in zip(start_idx,end_idx):
-			holder = error_list[ii:kk]
-			label = str((holder[0][0],holder[0][1]))
-			dummy,dummy,time,mean,std = zip(*holder)
-			mean = np.array(mean)
-			# std = np.array(std)
-			# ax.fill_between(time,mean-std,mean+std,alpha=0.2)
-			ax.plot(time,mean)
-			ax.scatter(time,mean,label=label)
-		plt.legend()
-		plt.xlabel('Timestep (days)')
-		plt.ylabel('Mean Error')
-		plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/'+traj_type+'bias_compare.jpg')
-
-def mean_data(matrix):
-	return matrix.sum(axis=0)/np.array([matrix[:,x].count_nonzero() for x in range(matrix.shape[0])])
-
 def standard_error_plot():
-
 	for traj_type in ['argo','SOSE']:
 		error_list = []
 		for lat,lon in [(1,1),(2,2),(3,3),(4,4),(2,3),(3,6)]:
