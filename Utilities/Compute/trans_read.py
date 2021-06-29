@@ -116,6 +116,7 @@ class TransitionGeo(object):
 	def new_from_old(cls,trans_geo):
 		new_trans_geo = cls(lat_sep=trans_geo.lat_sep,lon_sep=trans_geo.lon_sep,time_step=trans_geo.time_step)
 		new_trans_geo.set_total_list(trans_geo.total_list)
+		assert isinstance(new_trans_geo.total_list,GeoList) 
 		return new_trans_geo
 
 class SOSEGeo(TransitionGeo):
@@ -193,7 +194,8 @@ class BaseMat(scipy.sparse.csc_matrix):
 	@classmethod
 	def new_from_old(cls,transition_matrix):
 		old_trans_geo = transition_matrix.trans_geo
-		trans_geo = old_trans_geo.new_from_old(old_trans_geo)
+		trans_geo = TransitionGeo.new_from_old(old_trans_geo)
+		assert isinstance(trans_geo.total_list,GeoList) 
 		row_idx,column_idx,data = scipy.sparse.find(transition_matrix)
 		return cls((data,(row_idx,column_idx)),
 			shape=(len(transition_matrix.trans_geo.total_list),

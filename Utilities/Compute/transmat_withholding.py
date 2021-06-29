@@ -10,6 +10,42 @@ import pickle
 
 file_handler = FilePathHandler(ROOT_DIR,'transmat_withholding')
 
+
+def matrix_compare(matrix_1,matrix_2,descripton):
+	east_west_lr, north_south_lr = matrix_1.return_mean()
+	east_west_lr = matrix_1.trans_geo.transition_vector_to_plottable(east_west_lr)
+	north_south_lr = matrix_1.trans_geo.transition_vector_to_plottable(north_south_lr)
+
+	east_west_hr, north_south_hr = matrix_2.return_mean()
+	east_west_hr = matrix_2.trans_geo.transition_vector_to_plottable(east_west_hr)
+	north_south_hr = matrix_2.trans_geo.transition_vector_to_plottable(north_south_hr)
+
+	mask = (north_south_lr.data!=0)&(north_south_hr.data!=0)
+
+	east_west_lr = east_west_lr.data[mask]
+	north_south_lr = north_south_lr.data[mask]
+	east_west_hr = east_west_hr.data[mask]
+	north_south_hr = north_south_hr.data[mask]
+
+	ew_std_lr, ns_std_lr = matrix_1.return_std()
+	ew_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ew_std_lr)
+	ns_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ns_std_lr)
+
+	ew_std_hr, ns_std_hr = matrix_2.return_std()
+	ew_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ew_std_hr)
+	ns_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ns_std_hr)
+					
+	ew_std_lr = ew_std_lr.data[mask]
+	ns_std_lr = ns_std_lr.data[mask]
+	ew_std_hr = ew_std_hr.data[mask]
+	ns_std_hr = ns_std_hr.data[mask]
+
+	ew_mean_diff = abs(east_west_lr-east_west_hr).mean()
+	ns_mean_diff = abs(north_south_lr-north_south_hr).mean()
+	ew_std_diff = abs(ew_std_lr-ew_std_hr).mean()
+	ns_std_diff = abs(ns_std_lr-ns_std_hr).mean()
+	return (ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,matrix_1.trans_geo.lat_sep,matrix_1.trans_geo.lon_sep,matrix_1.trans_geo.time_step,descripton)
+
 def bias_plot():
 	from TransitionMatrix.Utilities.Compute.compute_utils import matrix_size_match    
 	out = []
@@ -22,41 +58,7 @@ def bias_plot():
 				holder_low_res = holder_low_res.multiply(multiplyer)
 				holder_high_res = TransMat.load_from_type(GeoClass=traj_type,lat_spacing=lat,lon_spacing=lon,time_step=180)
 				holder_high_res = holder_high_res.multiply(1)
-
-				east_west_lr, north_south_lr = holder_low_res.return_mean()
-				east_west_lr = holder_low_res.trans_geo.transition_vector_to_plottable(east_west_lr)
-				north_south_lr = holder_low_res.trans_geo.transition_vector_to_plottable(north_south_lr)
-
-				east_west_hr, north_south_hr = holder_high_res.return_mean()
-				east_west_hr = holder_high_res.trans_geo.transition_vector_to_plottable(east_west_hr)
-				north_south_hr = holder_high_res.trans_geo.transition_vector_to_plottable(north_south_hr)
-
-				mask = (north_south_lr.data!=0)&(north_south_hr.data!=0)
-
-				east_west_lr = east_west_lr.data[mask]
-				north_south_lr = north_south_lr.data[mask]
-				east_west_hr = east_west_hr.data[mask]
-				north_south_hr = north_south_hr.data[mask]
-
-				ew_std_lr, ns_std_lr = holder_low_res.return_std()
-				ew_std_lr = holder_low_res.trans_geo.transition_vector_to_plottable(ew_std_lr)
-				ns_std_lr = holder_low_res.trans_geo.transition_vector_to_plottable(ns_std_lr)
-
-				ew_std_hr, ns_std_hr = holder_high_res.return_std()
-				ew_std_hr = holder_high_res.trans_geo.transition_vector_to_plottable(ew_std_hr)
-				ns_std_hr = holder_high_res.trans_geo.transition_vector_to_plottable(ns_std_hr)
-								
-				ew_std_lr = ew_std_lr.data[mask]
-				ns_std_lr = ns_std_lr.data[mask]
-				ew_std_hr = ew_std_hr.data[mask]
-				ns_std_hr = ns_std_hr.data[mask]
-
-				ew_mean_diff = abs(east_west_lr-east_west_hr).mean()
-				ns_mean_diff = abs(north_south_lr-north_south_hr).mean()
-				ew_std_diff = abs(ew_std_lr-ew_std_hr).mean()
-				ns_std_diff = abs(ns_std_lr-ns_std_hr).mean()
-
-				out.append((ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,lat,lon,time,traj_type.file_type))
+				out.append(matrix_compare(holder_low_res,holder_high_res,traj_type.file_type))
 	with open(file_handler.tmp_file('resolution_difference_data'), 'wb') as fp:
 		pickle.dump(out, fp)
 	fp.close()
@@ -77,8 +79,7 @@ def data_withholding_calc():
 						base_mat = TransMat.load_from_type(GeoClass=base_traj_class,lat_spacing = lat,lon_spacing = lon,time_step = time_step)
 						traj_geo = WithholdingGeo(percentage,k,lat_sep=lat,lon_sep=lon,time_step=time_step)
 						withholding_mat = TransMat.load(traj_geo.make_filename())
-						matrix_1,matrix_2 = matrix_size_match(base_mat,withholding_mat)
-						datalist.append(matrix_difference_compare(matrix_1,matrix_2))
+						datalist.append(matrix_compare(base_mat,withholding_mat,(base_traj_class.file_type,percentage)))
 	with open(file_handler.tmp_file('transition_matrix_withholding_data'), 'wb') as fp:
 		pickle.dump(datalist, fp)
 	fp.close()
@@ -114,14 +115,11 @@ def matrix_seasonal_intercomparison():
 			print('time step is ',date)
 			print('lat is ',lat)
 			print('lon is ',lon)
-			for summer_class,winter_class in [(SummerGeo,WinterGeo)]:
-				base_mat = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
-				outer_class = TransMat.load_from_type(GeoClass=summer_class,lat_spacing = lat,lon_spacing = lon,time_step = date)
-				inner_class = TransMat.load_from_type(GeoClass=winter_class,lat_spacing = lat,lon_spacing = lon,time_step = date)
-				matrix_1,matrix_2 = matrix_size_match(base_mat,outer_class)
-				datalist.append(matrix_difference_compare(matrix_1,matrix_2))
-				matrix_1,matrix_2 = matrix_size_match(base_mat,inner_class)
-				datalist.append(matrix_difference_compare(matrix_1,matrix_2))
+			base_mat = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
+			summer_class = TransMat.load_from_type(GeoClass=SummerGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
+			winter_class = TransMat.load_from_type(GeoClass=WinterGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
+			datalist.append(matrix_compare(base_mat,summer_class,'summer'))
+			datalist.append(matrix_compare(base_mat,winter_class,'winter'))
 	with open(file_handler.tmp_file('seasonal_data'), 'wb') as fp:
 		pickle.dump(datalist, fp)
 	fp.close()
