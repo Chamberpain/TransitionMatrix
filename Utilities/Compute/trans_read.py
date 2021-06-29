@@ -33,9 +33,9 @@ class TransitionGeo(object):
 		self.lon_sep = lon_sep
 		self.time_step = time_step
 
-	def plot_setup(self):
-		XX,YY,ax,fig = cartopy_setup(self.get_lat_bins(),self.get_lon_bins(),self.file_type)
-		return (XX,YY,ax,fig)
+	def plot_setup(self,ax=False):
+		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax).get_map()
+		return (XX,YY,ax)
 
 	def set_total_list(self,total_list):
 		lats,lons,dummy = zip(*[tuple(x) for x in total_list])
