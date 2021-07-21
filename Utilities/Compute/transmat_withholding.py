@@ -20,7 +20,7 @@ def matrix_compare(matrix_1,matrix_2,descripton):
 	east_west_hr = matrix_2.trans_geo.transition_vector_to_plottable(east_west_hr)
 	north_south_hr = matrix_2.trans_geo.transition_vector_to_plottable(north_south_hr)
 
-	mask = (north_south_lr.data!=0)&(north_south_hr.data!=0)
+	mask = (~north_south_lr.mask)&(~north_south_hr.mask)
 
 	east_west_lr = east_west_lr.data[mask]
 	north_south_lr = north_south_lr.data[mask]
@@ -46,11 +46,11 @@ def matrix_compare(matrix_1,matrix_2,descripton):
 	ns_std_diff = abs(ns_std_lr-ns_std_hr).mean()
 	return (ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,matrix_1.trans_geo.lat_sep,matrix_1.trans_geo.lon_sep,matrix_1.trans_geo.time_step,descripton)
 
-def bias_plot():
+def temporal_bias_plot():
 	from TransitionMatrix.Utilities.Compute.compute_utils import matrix_size_match    
 	out = []
 	for traj_type in [TransitionGeo,SOSEGeo]:
-		for lat,lon in [(1,1),(2,2),(3,3),(4,4),(2,3),(4,6)]:
+		for lat,lon in [(1,1),(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
 			for time, multiplyer in [(30,11),(60,5),(90,3),(120,2)]:
 				print('lat is ',lat,' lon is ',lon)
 				print('time is ',time)
@@ -61,6 +61,56 @@ def bias_plot():
 				out.append(matrix_compare(holder_low_res,holder_high_res,traj_type.file_type))
 	with open(file_handler.tmp_file('resolution_difference_data'), 'wb') as fp:
 		pickle.dump(out, fp)
+	fp.close()
+
+def resolution_bias_plot():
+	data_list = []
+	for time in [30,60,90,120,150,180]:	
+		high_res = TransMat.load_from_type(lat_spacing=1,lon_spacing=1,time_step=time)
+		hr_ew_scaled,hr_ns_scaled = high_res.return_mean()
+
+		for lat,lon in [(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
+			print('lat = ',lat)
+			print('lon = ',lon)
+			print('time = ',time)
+			low_res = TransMat.load_from_type(lat_spacing=lat,lon_spacing=lon,time_step=time)
+			lr_ew_scaled,lr_ns_scaled = low_res.return_mean()
+			for lr_idx in range(low_res.shape[0]):
+				print('idx = ',lr_idx)
+				point_list = low_res.trans_geo.total_list.reduced_res(lr_idx,1,1)
+				mean_list = []
+				for x in point_list:
+					try:
+						hr_idx = high_res.trans_geo.total_list.index(geopy.Point(x))
+						mean_list.append(geopy.Point(x[0]+hr_ns_scaled[hr_idx],x[1]+hr_ew_scaled[hr_idx]))
+					except ValueError:
+						continue
+				if not mean_list:
+					continue
+				lat_list,lon_list = zip(*[(x.latitude,x.longitude) for x in mean_list])
+				high_res_mean = geopy.Point(np.mean(lat_list),np.mean(lon_list))
+				low_res_lat = low_res.trans_geo.total_list[lr_idx].latitude+lr_ns_scaled[lr_idx]
+				low_res_lon = low_res.trans_geo.total_list[lr_idx].longitude+lr_ew_scaled[lr_idx]
+				low_res_mean = geopy.Point(low_res_lat,low_res_lon)
+				error = geopy.distance.great_circle(high_res_mean,low_res_mean).km
+				data_list.append((error,lat,lon,time))
+	with open(file_handler.tmp_file('resolution_bias_data'), 'wb') as fp:
+		pickle.dump(data_list, fp)
+	fp.close()
+
+def resolution_standard_error():
+	data_list = []
+	for time in [30,60,90,120,150,180]:	
+		for lat,lon in [(1,1),(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
+			print('lat = ',lat)
+			print('lon = ',lon)
+			print('time = ',time)
+			trans_mat = TransPlot.load_from_type(lat_spacing=lat,lon_spacing=lon,time_step=time)
+			standard_error_holder = trans_mat.return_standard_error()
+			data_list.append((standard_error_holder.mean(),standard_error_holder.std(),lat,lon,time))
+
+	with open(file_handler.tmp_file('resolution_standard_error'), 'wb') as fp:
+		pickle.dump(data_list, fp)
 	fp.close()
 
 def data_withholding_calc():
@@ -84,28 +134,6 @@ def data_withholding_calc():
 		pickle.dump(datalist, fp)
 	fp.close()
 
-
-
-def matrix_datespace_intercomparison():
-	datalist = []
-	datelist = [60,90,120,150,180]
-	coord_list = [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]
-	for lat,lon in coord_list:
-		for date2 in datelist:
-			for traj_class in [TransitionGeo,SOSEGeo]:
-				outer_class = TransMat.load_from_type(GeoClass=traj_class,lat_spacing = lat,lon_spacing = lon,time_step = date2)
-				inner_class = TransMat.load_from_type(GeoClass=traj_class,lat_spacing = lat,lon_spacing = lon,time_step = 30)
-
-				outer_class,inner_class = matrix_size_match(outer_class,inner_class)
-				matrix_token = copy.deepcopy(inner_class)
-				for dummy in range(int(date2/30)-1):
-					inner_class = inner_class.dot(matrix_token)
-				datalist.append(matrix_difference_compare(outer_class,inner_class))
-	with open(file_handler.tmp_file('datespace_data'), 'wb') as fp:
-		pickle.dump(datalist, fp)
-	fp.close()
-
-
 def matrix_seasonal_intercomparison():
 	datalist = []
 	datelist = [30,60,90,120,150,180]
@@ -124,26 +152,20 @@ def matrix_seasonal_intercomparison():
 		pickle.dump(datalist, fp)
 	fp.close()
 
-
 def matrix_ARGOS_intercomparison():
 	datalist = []
 	datelist = [30,60,90,120,150,180]
 	coord_list = [(2,2),(2,3),(3,3),(4,4),(4,6)]
-	argos_class = ARGOSGeo
-	gps_class = GPSGeo
 	for lat,lon in coord_list:
 		for date in datelist:
 			print('time step is ',date)
 			print('lat is ',lat)
 			print('lon is ',lon)
-
 			base_mat = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
-			outer_class = TransMat.load_from_type(GeoClass=argos_class,lat_spacing = lat,lon_spacing = lon,time_step = date)
-			inner_class = TransMat.load_from_type(GeoClass=gps_class,lat_spacing = lat,lon_spacing = lon,time_step = date)
-			matrix_1,matrix_2 = matrix_size_match(base_mat,outer_class)
-			datalist.append(matrix_difference_compare(matrix_1,matrix_2))
-			matrix_1,matrix_2 = matrix_size_match(base_mat,inner_class)
-			datalist.append(matrix_difference_compare(matrix_1,matrix_2))
-	with open(file_handler.tmp_file('argos_gps_data'), 'wb') as fp:
+			argos_class = TransMat.load_from_type(GeoClass=ARGOSGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
+			gps_class = TransMat.load_from_type(GeoClass=GPSGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
+			datalist.append(matrix_compare(base_mat,argos_class,'argos'))
+			datalist.append(matrix_compare(base_mat,gps_class,'gps'))
+	with open(file_handler.tmp_file('argos_gps_withholding'), 'wb') as fp:
 		pickle.dump(datalist, fp)
-	fp.close()
+	fp.close()	

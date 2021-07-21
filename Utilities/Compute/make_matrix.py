@@ -16,8 +16,6 @@ import os
 
 
 class SetToDealWithGeo(set):
-	def __init__(self,item):
-		super().__init__(item)
 
 	def geo_list_from_set(self):
 		return [geopy.Point(x) for x in self]
@@ -33,9 +31,8 @@ class ProfileDict(dict):
 
 	Performs parsing logic to determine the proper transitions 
 	"""
-	def __init__(self,*args,**kwargs):
-		super().__init__(*args,**kwargs)
 
+	bin_dict = {}
 
 	def space_and_time_bins(self,trans_geo):
 
@@ -99,7 +96,7 @@ class ProfileDict(dict):
 				else:
 					return start_index+diff_list.index(closest_diff)+1
 
-			start_indexes =get_index_of_decorrelated(item,time_delta = trans_geo.time_step)
+			start_indexes =get_index_of_decorrelated(item,time_delta = max([30,trans_geo.time_step/3]))
 			end_indexes = [find_next_time_index(item,x,time_delta = trans_geo.time_step) for x in start_indexes]
 			mask=[i for i,v in enumerate(end_indexes) if v != None]
 			start_indexes = np.array(start_indexes)[mask].tolist()
@@ -111,16 +108,25 @@ class ProfileDict(dict):
 		print('Getting the space and time bins')
 		start_bin_list = []
 		end_bin_list = []
+		lat_bins = trans_geo.get_lat_bins()
+		lon_bins = trans_geo.get_lon_bins()
 		for wmoid,item in self.items():
 			if not item.prof.pos._list:
 				continue
 			#get the time indexes
 			start_pos_indexes,end_pos_indexes = get_time_start_and_end_indexes(item,trans_geo)
 			#get the bin indexes
-			start_bin_list+=list(item.prof.pos.return_pos_bins(trans_geo.get_lat_bins(),trans_geo.get_lon_bins(),
+			start_bin_holder= list(item.prof.pos.return_pos_bins(lat_bins,lon_bins,
 			index_values=start_pos_indexes))
-			end_bin_list+=list(item.prof.pos.return_pos_bins(trans_geo.get_lat_bins(),trans_geo.get_lon_bins(),
+			start_bin_list+=start_bin_holder
+			end_bin_holder = list(item.prof.pos.return_pos_bins(lat_bins,lon_bins,
 			index_values=end_pos_indexes))
+			end_bin_list+= end_bin_holder
+			for idx in zip(start_bin_holder,end_bin_holder):
+				try:
+					self.bin_dict[(tuple(idx[0]),tuple(idx[1]))]+=1
+				except KeyError:
+					self.bin_dict[(tuple(idx[0]),tuple(idx[1]))]=1
 		return (start_bin_list,end_bin_list)
 
 class ARGOSDict(ProfileDict):
@@ -156,145 +162,105 @@ class WinterDict(SeasonalDict):
 	months = [1,2,3,10,11,12]
 	description = 'Winter'
 
-class PosBinList(object):
-	""" class to inheret bin lists but with masking functionality 
-	Input: list of geopy Points
-	output: list of tuples plus dictionary of indexes and functionality"""
-	def __init__(self,start_list,end_list):
-		self.start_list = [tuple(x) for x in start_list]
-		self.end_list = [tuple(x) for x in end_list]
-		self.start_dict = self.make_dict(self.start_list)
-		self.end_dict = self.make_dict(self.end_list)
 
-	def make_dict(self,list_token):
-		d = {}
-		for idx,value in enumerate(list_token):
+def mask_compute(start_bins,end_bins,total_list):
 
-			try:
-				d[tuple(value)].append(idx)
-			except KeyError:
-				d[tuple(value)] = [idx]
-		return d
+	def not_enough_numbers(matrix_holder,num=4):
+		print('Checking if there are not enough numbers')
+		return np.where((matrix_holder).sum(axis=0)<=num)[1].tolist()
 
-	def list_from_mask(self,masked_values):
-		new_start_list = self.start_list[:]
-		new_end_list = self.end_list[:]
-		remove_idxs = []
-		for value in masked_values:
-			try:
-				remove_idxs += self.start_dict[value]
-			except KeyError:
-				continue
-		for value in masked_values:
-			try:
-				remove_idxs += self.end_dict[value]
-			except KeyError:
-				continue
-		for idx in np.sort(np.unique(remove_idxs))[::-1]:
-			del new_start_list[idx]
-			del new_end_list[idx]
-		return (new_start_list,new_end_list)
+	def not_enough_rows(matrix_holder,num=2):
+		print('Checking if there are not enough numbers')
+		return np.where((matrix_holder!=0).sum(axis=0)<=num)[1].tolist()
 
-	def get_trans_idx_and_numbers(self,trans_geo,mask):
-		masked_start,masked_end = self.list_from_mask(mask)
-		transition_dict = self.make_dict(list(zip(masked_start,masked_end)))
-		total_list = [tuple(x) for x in trans_geo.total_list]
-		col_list = []
-		row_list = []
-		data_list = []
-		for (start_idx,end_idx),idx_list in transition_dict.items():
-			start_idx
-			col_list.append(total_list.index(start_idx))
-			row_list.append(total_list.index(end_idx))
-			data_list.append(len(idx_list))
-		return (col_list,row_list,data_list)
+	def lone_eigen_vectors(matrix_holder,num=3):
+		print('Checking for lone eigen vectors')
+		eig_val,eig_vecs = scipy.sparse.linalg.eigs(matrix_holder.asfptype(),k=30)
+		print('calculated the eigen vectors')				
+		checksum = [abs(eig_vecs[:,k]).max()*0.2 for k in range(eig_vecs.shape[1])]
+		_idx_list = [k for k in range(eig_vecs.shape[1]) if (abs((eig_vecs[:,k]))>checksum[k]).sum()<=num]
+		mask = [abs(eig_vecs[:,idx]).tolist().index(abs(eig_vecs[:,idx]).max()) for idx in _idx_list]
+		return mask
 
-
-def create_total_list(pos_obj,mask):
-	print('Creating the total list')
-	masked_start_list,masked_end_list = pos_obj.list_from_mask(mask)
-	masked_start_set = set(masked_start_list)
-	masked_end_set = set(masked_end_list)
-	while (len(masked_start_set.difference(masked_end_list))>0)|(len(masked_end_set.difference(masked_start_list))>0):
-		mask += list(masked_start_set.symmetric_difference(masked_end_list))
-		masked_start_list,masked_end_list = pos_obj.list_from_mask(mask)
-		masked_start_set = set(masked_start_list)
-		masked_end_set = set(masked_end_list)
-	return ([geopy.Point(x) for x in list(masked_start_set)],mask)
-
-def not_enough_numbers(pos_obj,mask,num=3):
-	print('Checking if there are not enough numbers')
-	mask_list = []
-	masked_start,masked_end = pos_obj.list_from_mask(mask)
-	for start_idx,idx_list in pos_obj.make_dict(masked_start).items():		
-		if len(idx_list)<num:
-			mask_list.append(start_idx)
-	return mask_list
-
-def isolated_points(trans_geo,mask):
-	print('Checking for isolated points')
-	tree = spatial.KDTree(trans_geo.tuple_total_list())
-	closest_bins_spacing,_ = tree.query(trans_geo.tuple_total_list(),k=2)
-	idx_list = np.where(closest_bins_spacing[:,1]>np.sqrt(trans_geo.lat_sep**2+trans_geo.lon_sep**2))[0].tolist()
-	return [trans_geo.tuple_total_list()[x] for x in idx_list]
-
-def lone_eigen_vectors(pos_obj,trans_geo,mask):
-	XX,YY = trans_geo.get_coords()
-
-	print('Checking for lone eigen vectors')
-	col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-	transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
-	transition_matrix.asfptype()
-	print('begin calculating eigen vectors')
-	eig_val,eig_vecs = scipy.sparse.linalg.eigs(transition_matrix,k=50)
-	print('calculated the eigen vectors')				
-	checksum = [abs(eig_vecs[:,k]).max()*0.05 for k in range(eig_vecs.shape[1])]
-	idx_list = [k for k in range(eig_vecs.shape[1]) if (abs((eig_vecs[:,k]))>checksum[k]).sum()<=3]
-	pos_idx_list = [abs(eig_vecs[:,idx]).tolist().index(abs(eig_vecs[:,idx]).max()) for idx in idx_list]
-	tuple_list = trans_geo.tuple_total_list()
-	mask = [tuple_list[x] for x in pos_idx_list]
-	return mask
-
-def mask_compute(pos_obj,trans_geo):
+	translation_dict = dict(zip(total_list,list(range(len(total_list)))))
+	col_idx = []
+	row_idx = []
+	for k in range(len(start_bins)):
+		if k%1000==0:
+			print(k)
+		col_idx.append(translation_dict[start_bins[k]])
+		row_idx.append(translation_dict[end_bins[k]])
+	data = list(all_dict.bin_dict.values())
+	base_mat = scipy.sparse.csc_matrix((data,(row_idx,col_idx)),shape=(len(total_list),len(total_list)))
 	mask = []
+	tmp_mask = []
 	compute = True
+	idx_list = list(range(len(total_list)))
+	total_list_holder = copy.deepcopy(total_list)
 	while compute:
 		print('mask length is ',len(mask))
-		total_list,mask = create_total_list(pos_obj,mask)
-		trans_geo.set_total_list(total_list)
-		number_mask = not_enough_numbers(pos_obj,mask)
+		for idx in tmp_mask:
+			idx_list.remove(idx)
+			total_list_holder.remove(total_list[idx])
+		trans_mat_holder = base_mat[idx_list,:]
+		trans_mat_holder = trans_mat_holder[:,idx_list]
+		number_mask = not_enough_numbers(trans_mat_holder)
 		if number_mask:
-			mask += number_mask
+			print('there was a number mask')
+			tmp_mask = []
+			for idx in number_mask:
+				mask.append(translation_dict[total_list_holder[idx]])
+				tmp_mask.append(translation_dict[total_list_holder[idx]])
 			continue
-		isolated_mask = isolated_points(trans_geo,mask)
-		if isolated_mask:
-			mask += isolated_mask
+		row_mask = not_enough_rows(trans_mat_holder)
+		if row_mask:
+			print('there was a row mask')
+			tmp_mask = []
+			for idx in row_mask:
+				mask.append(translation_dict[total_list_holder[idx]])
+				tmp_mask.append(translation_dict[total_list_holder[idx]])
 			continue
-		eigen_mask = lone_eigen_vectors(pos_obj,trans_geo,mask)
+		eigen_mask = lone_eigen_vectors(trans_mat_holder)
 		if eigen_mask:
-			mask += eigen_mask
+			print('there was an eigen mask')
+			tmp_mask = []
+			for idx in eigen_mask:
+				try:
+					new_idx = translation_dict[total_list_holder[idx]]
+					assert new_idx not in mask
+					mask.append(new_idx)
+					tmp_mask.append(new_idx)
+				except AssertionError:
+					continue
 			continue
 		compute = False
-	return mask
+	row_idx,column_idx,data = scipy.sparse.find(trans_mat_holder)
+	return (row_idx,column_idx,data,total_list_holder)
 
 def withholding_calc():
 	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,WithholdingGeo),(aggregate_sose_list,SOSEReader,SOSEWithholdingGeo)]:
 		BaseRead.all_dict = []
 		agg_function()
-		for degree_bins in [(2,2),(2,3),(3,3),(4,4),(4,6)]:
+		for degree_bins in [(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for percentage in [0.95,0.9,0.85,0.8,0.75,0.7]:
-				for time_step in [30,60,90]:
-					for k in range(5):
+				for time_step in [30,60,90,120]:
+					for k in range(10):
 						trans_geo = GeoToken(percentage,k,lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
 						if os.path.isfile(trans_geo.make_filename()):
+							print('file ',trans_geo.make_filename(),' already there, continuing')
 							continue
 						all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(percentage))
+						all_dict.bin_dict = {}
+						assert len(all_dict)-percentage*len(ReadToken.all_dict)<10
 						start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
-						pos_obj = PosBinList(start_bin_list,end_bin_list)
-						mask = mask_compute(pos_obj,trans_geo)
-						col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-						transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
+						start_bins,end_bins = zip(*all_dict.bin_dict.keys())
+						total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
+
+						(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+						# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
+						trans_geo.set_total_list([geopy.Point(x) for x in total_list])
+						transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
 						transition_matrix.asfptype()
 						transition_matrix.save()
 
@@ -307,13 +273,19 @@ def base_calc():
 			for time_step in [30,60,90,120,150,180]:
 				trans_geo = GeoToken(lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
 				if os.path.isfile(trans_geo.make_filename()):
+					print('file ',trans_geo.make_filename(),' already there, continuing')
 					continue
 				all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(1))
+				all_dict.bin_dict = {}
+				assert all_dict==ReadToken.all_dict
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
-				pos_obj = PosBinList(start_bin_list,end_bin_list)
-				mask = mask_compute(pos_obj,trans_geo)
-				col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-				transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
+				start_bins,end_bins = zip(*all_dict.bin_dict.keys())
+				total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
+
+				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+				# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
+				trans_geo.set_total_list([geopy.Point(x) for x in total_list])
+				transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
 				transition_matrix.asfptype()
 				transition_matrix.save()
 
@@ -328,14 +300,19 @@ def seasonal_calc():
 				for GeoToken,ProfileToken in token_list:
 					trans_geo = GeoToken(lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
 					if os.path.isfile(trans_geo.make_filename()):
+						print('file ',trans_geo.make_filename(),' already there, continuing')
 						continue
 					all_dict = ProfileToken(ReadToken.get_subsampled_float_dict(1))
+					assert len(all_dict)==len(ReadToken.all_dict)
+					all_dict.bin_dict = {}
 					start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
-					pos_obj = PosBinList(start_bin_list,end_bin_list)
-					mask = mask_compute(pos_obj,trans_geo)
-					col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-					transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
-					assert transition_matrix.trans_geo.make_filename() == trans_geo.make_filename()
+					start_bins,end_bins = zip(*all_dict.bin_dict.keys())
+					total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
+
+					(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+					# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
+					trans_geo.set_total_list([geopy.Point(x) for x in total_list])
+					transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
 					transition_matrix.asfptype()
 					transition_matrix.save()
 
@@ -347,13 +324,20 @@ def argos_gps_calc():
 		lat_sep,lon_sep = degree_bins
 		for time_step in [30,60,90,120,150,180]:
 			for GeoToken,DictToken in token_list:
-				all_dict = DictToken(ArgoReader.all_dict)
 				trans_geo = GeoToken(lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
+				if os.path.isfile(trans_geo.make_filename()):
+					print('file ',trans_geo.make_filename(),' already there, continuing')
+					continue
+				all_dict = DictToken(ArgoReader.all_dict)
+				assert len(all_dict)==len(ReadToken.all_dict)
+				all_dict.bin_dict = {}
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
-				pos_obj = PosBinList(start_bin_list,end_bin_list)
-				mask = mask_compute(pos_obj,trans_geo)
-				col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
-				transition_matrix = TransMat((data,(row_idx,col_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
-				assert transition_matrix.trans_geo.make_filename() == trans_geo.make_filename()
+				start_bins,end_bins = zip(*all_dict.bin_dict.keys())
+				total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
+
+				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+				# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
+				trans_geo.set_total_list([geopy.Point(x) for x in total_list])
+				transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
 				transition_matrix.asfptype()
 				transition_matrix.save()

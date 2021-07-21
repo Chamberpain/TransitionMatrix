@@ -2,13 +2,13 @@ from __future__ import print_function
 import pandas as pd
 import numpy as np
 from dateutil.relativedelta import relativedelta
-from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup
 import os, sys
 import datetime
 from scipy.sparse.base import isspmatrix
 import scipy.sparse
 from TransitionMatrix.Utilities.Compute.trans_read import BaseMat
 import matplotlib.pyplot as plt
+import geopy
 
 class Float(scipy.sparse.csc_matrix):
 	traj_file_type = 'float'
@@ -22,8 +22,10 @@ class Float(scipy.sparse.csc_matrix):
 		self.df = df
 
 	@ staticmethod
-	def return_float_vector(degree_bins,df,total_list):
-		bins_lat,bins_lon = BaseMat.bins_generator(degree_bins)
+	def return_float_vector(trans_geo,df,total_list):
+		bins_lat = trans_geo.get_lat_bins()
+		bins_lon = trans_geo.get_lon_bins()
+
 		df['bins_lat'] = pd.cut(df.latitude,bins = bins_lat,labels=bins_lat[:-1])
 		df['bins_lon'] = pd.cut(df.longitude,bins = bins_lon,labels=bins_lon[:-1])
 		df['bin_index'] = list(zip(df['bins_lon'].values,df['bins_lat'].values))
@@ -32,7 +34,7 @@ class Float(scipy.sparse.csc_matrix):
 		data = []
 		for x in df.groupby(['bin_index']).sum().Age_Percent.iteritems():
 			try:
-				row_idx.append(total_list.index(list(x[0])))
+				row_idx.append(total_list.index(geopy.Point(x[0][1],x[0][0])))
 # this is terrible notation, but it finds the index in the index list of the touple bins_lat, bins_lon
 
 				data.append(x[1])
@@ -90,13 +92,11 @@ class Float(scipy.sparse.csc_matrix):
 		for _ in range(x):
 			self.df = pd.concat([self.df,pd.DataFrame({'latitude':[lat],'longitude':[lon]})])
 
-	def scatter_plot(self,ax=False):
-		if not ax:
-			(bins_lat,bins_lon)=BaseMat.bins_generator(self.degree_bins)
-			XX,YY,ax,fig = cartopy_setup(bins_lat,bins_lon,self.traj_file_type)  
+	def scatter_plot(self,ax=False): 
 		y = self.df.latitude.tolist()
 		x = self.df.longitude.tolist()
-		plt.scatter(x,y,marker='*',color=self.marker_color,s=self.marker_size)
+		ax.scatter(x,y,marker='*',color=self.marker_color,s=self.marker_size)
+		return ax
 
 	def grid_plot(self,m=False):
 		(bins_lat,bins_lon)=BaseMat.bins_generator(self.degree_bins)
@@ -147,18 +147,18 @@ class Argo(Float):
 
 
 	@staticmethod
-	def recent_floats(degree_bins,total_list,age=True):	
+	def recent_floats(trans_geo,total_list,age=True):	
 		df = Float.get_recent_df()
 		if not age: 
 			df['Age_Percent']=1
-		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
+		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
 
 	@staticmethod
-	def total_floats(degree_bins,total_list,age=True):	
+	def total_floats(trans_geo,total_list,age=True):	
 		df = Float.get_total_df()
-		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
+		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
 
 
 
@@ -172,13 +172,13 @@ class SOCCOM(Float):
 
 
 	@staticmethod
-	def recent_floats(degree_bins,total_list,age=True):
+	def recent_floats(trans_geo,total_list,age=True):
 		df = Float.get_recent_df()
 		df = df[df['SOCCOM']]
 		if not age: 
 			df['Age_Percent']=1
-		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
-		return SOCCOM(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
+		return SOCCOM(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
 
 	@staticmethod
 	def total_floats(degree_bins,total_list,age=True):	
@@ -186,6 +186,6 @@ class SOCCOM(Float):
 		df = df[df['SOCCOM']]
 		if not age: 
 			df['Age_Percent']=1		
-		arg1,shape = Float.return_float_vector(degree_bins,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = degree_bins,total_list = total_list)
+		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
+		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
 

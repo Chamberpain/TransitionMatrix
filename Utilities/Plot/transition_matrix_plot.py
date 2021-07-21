@@ -8,42 +8,32 @@ import scipy
 import scipy.sparse.linalg
 import matplotlib.colors as colors
 import matplotlib.cm as cm
-from TransitionMatrix.Utilities.Plot.argo_data import SOCCOM,Argo
 import os
+import cartopy.crs as ccrs
 
+plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'transition_matrix_plot')
 
-class PlotGeo(TransitionGeo):
-	def make_filename(self,description):
-		return file_handler.tmp_file(description+'_'+self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
 
 class TransPlot(TransMat):
-	def __init__(self, arg1,**kwargs):
-		super(TransPlot,self).__init__(arg1,**kwargs)
+	def __init__(self, *args,**kwargs):
+		super().__init__(*args,**kwargs)
 
-	def set_trans_geo(self,trans_geo):
-		self.trans_geo = PlotGeo.new_from_old(trans_geo)
-
-	def number_plot(self): 
+	def number_plot(self,ax=False): 
 		number_matrix = self.new_sparse_matrix(self.number_data)
 		k = number_matrix.sum(axis=0)
 		k = k.T
 		print(k)
-
 		number_matrix_plot = self.trans_geo.transition_vector_to_plottable(k)
-		plt.figure('number matrix',figsize=(10,10))
-		XX,YY,ax,fig = self.trans_geo.plot_setup()  
+		XX,YY,ax = self.trans_geo.plot_setup(ax=ax)  
 		number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
-
-
-		plt.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=self.trans_geo.number_vmin,vmax=self.trans_geo.number_vmax)
+		ax.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=self.trans_geo.number_vmin,vmax=self.trans_geo.number_vmax)
 		# plt.title('Transition Density',size=30)
-		cbar = plt.colorbar()
+		PCM = ax.get_children()[0]
+		cbar = plt.colorbar(PCM,ax=ax)
 		cbar.set_label(label='Transition Number',size=30)
 		cbar.ax.tick_params(labelsize=30)
-		plt.annotate('B', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-		plt.savefig(self.trans_geo.make_filename('number'))
-		plt.close()
+		return ax
 
 	def distribution_and_mean_of_column(self,col_idx):
 		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
@@ -69,17 +59,12 @@ class TransPlot(TransMat):
 		e_w_mat = self.new_sparse_matrix(e_w_distance_weighted)
 		E_x = np.array(e_w_mat.sum(axis=0)).flatten()
 		#this is like calculating E(x) = sum(xf(x)) = mean
-
-
 		ns_x_minus_mu = (self.trans_geo.north_south[row_list,column_list]-E_y[column_list])**2
 		ew_x_minus_mu = (self.trans_geo.east_west[row_list,column_list]-E_x[column_list])**2
 		std_data = (ns_x_minus_mu+ew_x_minus_mu)*data_array
-
 		std_mat = self.new_sparse_matrix(std_data)
-
 		sigma = np.array(np.sqrt(std_mat.sum(axis=0))).flatten()
 		std_error = sigma/np.sqrt(number_matrix.sum(axis=0))
-
 		return np.array(std_error).flatten()
 
 	def standard_error_plot(self):
@@ -94,17 +79,16 @@ class TransPlot(TransMat):
 		plt.figure('Standard Error',figsize=(10,10))
 		# m.fillcontinents(color='coral',lake_color='aqua')
 		# number_matrix_plot[number_matrix_plot>1000]=1000
-		XX,YY,ax,fig = self.trans_geo.plot_setup()  
+		XX,YY,ax = self.trans_geo.plot_setup()  
 		number_matrix = self.new_sparse_matrix(self.number_data)
 		k = number_matrix.sum(axis=0)
 		k = k.T
 		standard_error_plot = np.ma.array(standard_error_plot,mask=self.trans_geo.transition_vector_to_plottable(k)==0)
 		plt.pcolormesh(XX,YY,standard_error_plot*100,cmap=plt.cm.cividis,vmax=self.trans_geo.std_vmax)
 		cbar = plt.colorbar()
-		cbar.set_label(label='Mean Standard Error (%)',size=30)
+		cbar.set_label(label='Mean Standard Error (%)',size=20)
 		cbar.ax.tick_params(labelsize=30)
-		plt.annotate('A', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-		plt.savefig(self.std_error_file())
+		plt.savefig(file_handler.out_file('standard_error_plot'))
 
 		plt.close()
 
@@ -112,7 +96,7 @@ class TransPlot(TransMat):
 		plt.figure(figsize=(10,10))
 		k = np.diagonal(self.todense())
 		transition_plot = self.trans_geo.transition_vector_to_plottable(k)
-		XX,YY,ax,fig = self.trans_geo.plot_setup()
+		XX,YY,ax = self.trans_geo.plot_setup()
 		number_matrix = self.new_sparse_matrix(self.number_data)
 		k = number_matrix.sum(axis=0)
 		k = k.T
@@ -184,98 +168,90 @@ class TransPlot(TransMat):
 
 
 	def quiver_plot(self):
-		row_list, column_list, data_array = scipy.sparse.find(self)
-		self.trans_geo.get_direction_matrix()
-
-		XX,YY = self.trans_geo.get_coords()
-
-
-		east_west_data = self.trans_geo.east_west[row_list,column_list]*data_array
-		north_south_data = self.trans_geo.north_south[row_list,column_list]*data_array
-		east_west = self.new_sparse_matrix(east_west_data)
-		north_south = self.new_sparse_matrix(north_south_data)
+		from matplotlib import patches
+		east_west_data, north_south_data = self.return_mean()
+		east_west_data = east_west_data*self.trans_geo.lon_sep*111/(self.trans_geo.time_step*24)
+		north_south_data = north_south_data*self.trans_geo.lat_sep*111/(self.trans_geo.time_step*24)
+		quiver_e_w = self.trans_geo.transition_vector_to_plottable(east_west_data)
+		quiver_n_s = self.trans_geo.transition_vector_to_plottable(north_south_data)
 
 
-		quiver_e_w = self.trans_geo.transition_vector_to_plottable(east_west.mean(axis=0)*self.trans_geo.lon_sep*111/(self.trans_geo.time_step*24))
-		quiver_n_s = self.trans_geo.transition_vector_to_plottable(north_south.mean(axis=0)*self.trans_geo.lat_sep*111/(self.trans_geo.time_step*24))
+		std_number = 3.
 
+		quiver_e_w = np.ma.masked_greater(quiver_e_w,np.mean(east_west_data)+std_number*np.std(east_west_data))
+		quiver_e_w = np.ma.masked_less(quiver_e_w,np.mean(east_west_data)-std_number*np.std(east_west_data))
 
-		std_number = 1/4.
+		quiver_n_s = np.ma.masked_greater(quiver_n_s,np.mean(north_south_data)+std_number*np.std(north_south_data))
+		quiver_n_s = np.ma.masked_less(quiver_n_s,np.mean(north_south_data)-std_number*np.std(north_south_data))
 
-		quiver_e_w = np.ma.masked_greater(quiver_e_w,np.mean(eastwest_mean)+std_number*np.std(eastwest_mean))
-		quiver_e_w = np.ma.masked_less(quiver_e_w,np.mean(eastwest_mean)-std_number*np.std(eastwest_mean))
+		sf = 3
 
-		quiver_n_s = np.ma.masked_greater(quiver_n_s,np.mean(northsouth_mean)+std_number*np.std(northsouth_mean))
-		quiver_n_s = np.ma.masked_less(quiver_n_s,np.mean(northsouth_mean)-std_number*np.std(northsouth_mean))
-
-
-
-		plt.figure(figsize=(40,20))
-		plt.subplot(1,2,1)
-		scale_factor = 2
-		dummy,dummy,m = basemap_setup(bins_lon[::scale_factor],bins_lat[::scale_factor],self.traj_file_type,fill_color=False)  
-		mXX,mYY = m(XX[::scale_factor,::scale_factor],YY[::scale_factor,::scale_factor])
-		q = m.quiver(mXX,mYY,quiver_e_w[::scale_factor,::scale_factor],quiver_n_s[::scale_factor,::scale_factor],scale = .6)
-		qk= plt.quiverkey (q,0.5, 1.02, 0.2, '0.2 km/hr', labelpos='N')
+		fig = plt.figure(figsize=(18,7))
+		ax1 = fig.add_subplot(1,2,1, projection=ccrs.PlateCarree())
+		geod = Geod(ellps='WGS84')
+		XX,YY,ax1 = self.trans_geo.plot_setup(ax = ax1)
+		q = ax1.quiver(XX[::sf,::sf],YY[::sf,::sf],quiver_e_w[::sf,::sf],quiver_n_s[::sf,::sf],scale=10)
+		qk= plt.quiverkey (q,0.5, 1.02, 1, '1 km hr$^{-1}$', labelpos='N')
 		plt.annotate('A', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 
-
-
-		scale_factor = 1.3
+		scale_factor = .001
 		skip_number = 2
-		plt.subplot(1,2,2)
-		lon_bins_holder = bins_lon[::skip_number]
-		lat_bins_holder = bins_lat[::skip_number]
-		dummy,dummy,m = basemap_setup(lon_bins_holder,lat_bins_holder,self.traj_file_type,fill_color=False)  
-		east_west = self.new_sparse_matrix(east_west_data)
-		north_south = self.new_sparse_matrix(north_south_data)
-		# ew_mask = np.array(east_west[row_list,column_list]!=0)[0]
-		# ns_mean = np.array(north_south[row_list,column_list]!=0)[0]
-		for k,((lat,lon),ns_mean,ew_mean) in enumerate(zip(self.total_list,
-			northsouth_mean,eastwest_mean)):
+		row_list, column_list, data_array = scipy.sparse.find(self)
+		lat_bins = self.trans_geo.get_lat_bins()[::skip_number]
+		lon_bins = self.trans_geo.get_lon_bins()[::3*skip_number]
+		ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())
+		XX,YY,ax2 = self.trans_geo.plot_setup(ax = ax2)
+		geoms = []
+		for k,(point,ns_mean,ew_mean) in enumerate(zip(self.trans_geo.total_list,north_south_data,east_west_data)):
+			lat = point.latitude
+			lon = point.longitude
 
-			if lon not in lon_bins_holder:
+			if lat not in lat_bins:
 				continue
-			if lat not in lat_bins_holder:
+			if lon not in lon_bins:
 				continue
-			if lon>160:
-				continue
-			if lon<-160:
-				continue
+
+
 			mask = column_list == k
 			if not mask.any():
 				continue
 
 			data = data_array[mask]
 
-			ew_holder = self.east_west[row_list[mask],column_list[mask]]
-			ns_holder = self.north_south[row_list[mask],column_list[mask]]
+			ew_holder = self.trans_geo.east_west[row_list[mask],column_list[mask]]
+			ns_holder = self.trans_geo.north_south[row_list[mask],column_list[mask]]
 
 			x = []
 			y = []
 			for i,ew,ns in zip(data,ew_holder,ns_holder): 
-				x+=[ew]*int(i)
-				y+=[ns]*int(i)
+				x+=[ew*i]
+				y+=[ns*i]
 
 			try:
 				w,v = np.linalg.eig(np.cov(x,y))
 			except:
 				continue
-			angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))+90
-			axis1 = np.log(2*max(w)*np.sqrt(5.991))
+			angle = np.degrees(np.arctan(v[1,np.argmax(w)]/v[0,np.argmax(w)]))
+			
+			axis1 = max(w*1000000)
+			axis2 = min(w*1000000)
 
-			axis2 = np.log(2*min(w)*np.sqrt(5.991))
+			axis1 = np.log(2*max(w)*np.sqrt(5.991)*1000)
+			axis2 = np.log(2*min(w)*np.sqrt(5.991)*1000)
+
 
 			print('angle = ',angle)
 			print('axis1 = ',axis1)
 			print('axis2 = ',axis2)
 			try:
-				poly = m.ellipse(lon, lat, axis1*scale_factor,axis2*scale_factor, 80,phi=angle+90,line=False, facecolor='green', zorder=3,alpha=0.35)
-			except ValueError:
+				lons, lats = ellipse(geod,lon, lat,axis1*100000,axis2*100000,phi=angle)
+				geoms.append(sgeom.Polygon(zip(lons, lats)))
+			except ValueError: 
 				print(' there was a value error in the calculation of the transition_matrix')
 				continue
+		ax2.add_geometries(geoms, ccrs.Geodetic(), facecolor='blue', alpha=0.7)
 		plt.annotate('B', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-		plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/quiver.jpg')
+		plt.savefig(file_handler.out_file('quiver_ellipse'))
 		plt.close()
 
 
@@ -351,16 +327,22 @@ class TransPlot(TransMat):
   
 
 def five_year_density_plot():
-	holder = TransPlot.load_from_type(1,1,180)
-	trans_mat = holder.multiply(9,0.0000001)
-	plottable = trans_mat.dot(scipy.sparse.csc_matrix(np.ones([trans_mat.shape[0],1]))) 
-	bins_lat,bins_lon = trans_mat.bins_generator(trans_mat.degree_bins)
-	XX,YY,m = basemap_setup(bins_lat,bins_lon,trans_mat.traj_file_type)
-	plottable = transition_vector_to_plottable(bins_lat,bins_lon,trans_mat.total_list,plottable.todense())
+	holder = argos_class = TransMat.load_from_type(GeoClass=GPSGeo,lat_spacing = 2,lon_spacing = 3,time_step = 90)
+	t = 90
+	for k in range(8):
+		print(k)
+		t = 2*t
+		holder = holder.dot(holder)
+	trans_mat = holder
+	plottable = scipy.sparse.csc_matrix(trans_mat).dot(scipy.sparse.csc_matrix(np.ones([trans_mat.shape[0],1]))) 
+	plottable = trans_mat.trans_geo.transition_vector_to_plottable(plottable.todense())
 	plottable = np.ma.masked_array(plottable,mask=abs(plottable)<10**-6)
-	m.pcolormesh(XX,YY,plottable*100)
-	plt.colorbar(label='Relative Chance of Aggregation (%)')
-	plt.savefig('future_aggreation')
+
+	XX,YY,ax = trans_mat.trans_geo.plot_setup()	
+	ax.pcolormesh(XX,YY,plottable*100,vmax=175,vmin=0)
+	PCM = ax.get_children()[0]
+	plt.colorbar(PCM,ax=ax,label='Relative Chance of Aggregation (%)')
+	plt.savefig(file_handler.out_file('future_aggreation_gps'))
 	plt.close()
 
 def eig_all_plots(trans_mat):
@@ -468,30 +450,38 @@ def eig_all_plots(trans_mat):
 			plt.close()
 
 def SOCCOM_death_plot():
-	traj_class = TransPlot.load_from_type(4,4,180) 
-	float_vector = SOCCOM.recent_floats(traj_class.degree_bins,traj_class.total_list)
-	bins_lat,bins_lon = traj_class.bins_generator(traj_class.degree_bins)
-	plt.figure(figsize=(20,10))
-	plt.subplot(1,2,1)
-	XX,YY,m = basemap_setup(bins_lat,bins_lon,traj_class.traj_file_type)
-	plottable = transition_vector_to_plottable(bins_lat,bins_lon,traj_class.total_list,traj_class.dot(float_vector).todense())
+	from TransitionMatrix.Utilities.Plot.argo_data import SOCCOM
+	from TransitionMatrix.Utilities.Plot.argo_data import Argo
+	from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy,SOSECartopy
+
+	traj_class = TransPlot.load_from_type(lat_spacing=4,lon_spacing=4,time_step=180)
+	traj_class.trans_geo.plot_class = SOSECartopy
+	float_vector = SOCCOM.recent_floats(traj_class.trans_geo,traj_class.trans_geo.total_list)
+	bins_lat = traj_class.trans_geo.get_lat_bins()
+	bins_lon = traj_class.trans_geo.get_lon_bins()
+	
+	fig = plt.figure(figsize=(18,7))
+	ax1 = fig.add_subplot(1,2,1, projection=ccrs.PlateCarree())
+	XX,YY,ax1 = traj_class.trans_geo.plot_setup(ax = ax1)
+	plottable = traj_class.trans_geo.transition_vector_to_plottable(traj_class.todense().dot(float_vector.todense()))
 	traj_class.traj_file_type = 'SOSE'
-	XX,YY,m = basemap_setup(bins_lat,bins_lon,traj_class.traj_file_type)  
-	m.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax = plottable.max()/2)
-	plt.colorbar(label='Probability Density/Age')
-	m = float_vector.scatter_plot(m=m)
+	ax1.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax = plottable.max()/2)
+	PCM = ax1.get_children()[0]
+	plt.colorbar(PCM,ax=ax1,label='Probability Density/Age')
+	ax1 = float_vector.scatter_plot(ax=ax1)
 	plt.annotate('A', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-	plt.subplot(1,2,2)
+	ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())
+	traj_class.trans_geo.plot_class = GlobalCartopy
 	traj_class.traj_file_type = 'Argo'
-	float_vector = Argo.recent_floats(traj_class.degree_bins,traj_class.total_list)
-	XX,YY,m = basemap_setup(bins_lat,bins_lon,traj_class.traj_file_type)
-	plottable = transition_vector_to_plottable(bins_lat,bins_lon,traj_class.total_list,traj_class.dot(float_vector).todense())
-	XX,YY,m = basemap_setup(bins_lat,bins_lon,traj_class.traj_file_type)  
-	m.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax = plottable.max()/2)
-	plt.colorbar(label='Probability Density/Age')
-	m = float_vector.scatter_plot(m=m)
+	float_vector = Argo.recent_floats(traj_class.trans_geo,traj_class.trans_geo.total_list)
+	XX,YY,ax2 = traj_class.trans_geo.plot_setup(ax = ax2)
+	plottable = traj_class.trans_geo.transition_vector_to_plottable(traj_class.todense().dot(float_vector.todense()))
+	ax2.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax = plottable.max()/2)
+	PCM = ax2.get_children()[0]
+	plt.colorbar(PCM,ax=ax2,label='Probability Density/Age')
+	ax2 = float_vector.scatter_plot(ax=ax2)
 	plt.annotate('B', xy = (0.17,0.9),xycoords='axes fraction',zorder=10,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-	plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/survival')
+	plt.savefig(file_handler.out_file('death_plot'))
 	plt.close()
 
 def number_matrix_plot():
@@ -514,24 +504,6 @@ def number_matrix_plot():
 		  x_offset += im.size[0]
 		new_im.save('/Users/pchamberlain/Projects/transition_matrix_paper/plots/'+traj+'number_plot.jpg')
 
-def gps_argos_compare():
-	from transition_matrix.compute.compute_utils import matrix_size_match
-	argos_class = TransPlot.load_from_type(2,2,180,'argo_argos') 
-	argos_class.abs_mean_and_dispersion()
-	gps_class = TransPlot.load_from_type(2,2,180,'argo_gps')
-	gps_class.abs_mean_and_dispersion()
-	argos, gps = matrix_size_match(gps_class,argos_class) 
-	difference_data = argos - gps
-	difference = TransPlot(difference_data,shape = argos.shape,total_list=argos.total_list,lat_spacing=argos.degree_bins[1],lon_spacing=argos.degree_bins[0],time_step=argos.time_step,
-		traj_file_type='argos_gps_difference') 
-	difference.save()
-	difference.abs_mean_and_dispersion()
-
-def season_compare():
-	winter_class = TransMatrix(degree_bin_lat=2,degree_bin_lon=3,date_span_limit=100,traj_file_type='Argo',season = [11,12,1,2])
-	summer_class = TransMatrix(degree_bin_lat=2,degree_bin_lon=3,date_span_limit=100,traj_file_type='Argo',season = [5,6,7,8])
-	winter_class, summer_class = matrix_size_match(winter_class,summer_class)
-	matrix_difference_compare(winter_class.matrix.transition_matrix,summer_class.matrix.transition_matrix)
 
 def eigen_spectrum_plot():
 	for lat,lon in [(1,1),(2,2),(3,3),(4,4),(2,3),(3,6)]:
@@ -572,48 +544,6 @@ def standard_error_plot():
 		plt.ylabel('Mean Error')
 		plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/'+traj_type+'_error_compare.jpg')
 		plt.close()
-
-def SOSE_compare():
-	from transition_matrix.compute.compute_utils import matrix_size_match
-	holder = TransPlot.load_from_type(2,2,120,traj_type='argo')
-	holder1 = TransPlot.load_from_type(2,2,120,traj_type='SOSE')
-	sose,argo = matrix_size_match(holder,holder1)
-	plot = TransPlot(argo-sose,total_list=sose.total_list,lat_spacing=2,lon_spacing=2,time_step=120,traj_file_type='SOSE')
-	self = plot
-	row_list, column_list, data_array = scipy.sparse.find(self)
-	self.get_direction_matrix()
-	bins_lat,bins_lon = self.bins_generator(self.degree_bins)
-	XX,YY = np.meshgrid(bins_lon,bins_lat)
-
-	east_west_data = self.east_west[row_list,column_list]*data_array
-	north_south_data = self.north_south[row_list,column_list]*data_array
-	east_west = self.new_sparse_matrix(east_west_data)
-	north_south = self.new_sparse_matrix(north_south_data)
-
-	eastwest_mean = []
-	northsouth_mean = []
-	for k in range(self.shape[0]):
-		eastwest_mean.append(east_west[:,k].data.mean())
-		northsouth_mean.append(north_south[:,k].data.mean())
-
-	quiver_e_w = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(eastwest_mean)*self.degree_bins[0]*111/(self.time_step*24))
-	quiver_n_s = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(northsouth_mean)*self.degree_bins[0]*111/(self.time_step*24))
-
-	std_number = 1/4.
-
-	quiver_e_w = np.ma.masked_greater(quiver_e_w,np.mean(eastwest_mean)+std_number*np.std(eastwest_mean))
-	quiver_e_w = np.ma.masked_less(quiver_e_w,np.mean(eastwest_mean)-std_number*np.std(eastwest_mean))
-
-	quiver_n_s = np.ma.masked_greater(quiver_n_s,np.mean(northsouth_mean)+std_number*np.std(northsouth_mean))
-	quiver_n_s = np.ma.masked_less(quiver_n_s,np.mean(northsouth_mean)-std_number*np.std(northsouth_mean))
-
-	scale_factor = 2
-	dummy,dummy,m = basemap_setup(bins_lon[::scale_factor],bins_lat[::scale_factor],self.traj_file_type,fill_color=False)  
-	mXX,mYY = m(XX[::scale_factor,::scale_factor],YY[::scale_factor,::scale_factor])
-	q = m.quiver(mXX,mYY,quiver_e_w[::scale_factor,::scale_factor],quiver_n_s[::scale_factor,::scale_factor],scale = .6)
-	qk= plt.quiverkey (q,0.5, 1.02, 0.02, '0.02 km/hr', labelpos='N')
-	plt.savefig('/Users/pchamberlain/Projects/transition_matrix_paper/plots/mean_sose_difference.jpg')
-	plt.close()
 
 def resolution_bias_plot():
 	from transition_matrix.compute.compute_utils import matrix_size_match    

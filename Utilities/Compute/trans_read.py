@@ -22,8 +22,8 @@ class TransitionGeo(object):
 	plot_class = GlobalCartopy
 	file_type = 'argo'
 	number_vmin=0
-	number_vmax=300
-	std_vmax=30
+	number_vmax=250
+	std_vmax=50
 	def __init__(self,lat_sep=2,lon_sep=2,time_step=60):
 		assert isinstance(lat_sep,int)
 		assert isinstance(lon_sep,int)
@@ -43,7 +43,7 @@ class TransitionGeo(object):
 		#total list must be a list
 		assert (set(lats).issubset(set(self.get_lat_bins())))&(set(lons).issubset(set(self.get_lon_bins())))
 		# total list must be a subset of the coordinate lists
-		total_list = GeoList(total_list)
+		total_list = GeoList(total_list,lat_sep=self.lat_sep,lon_sep=self.lon_sep)
 		self.total_list = total_list #make sure they are unique
 
 	def get_lat_bins(self):
@@ -182,19 +182,19 @@ class BaseMat(scipy.sparse.csc_matrix):
 	def load_from_type(cls,GeoClass=TransitionGeo,lat_spacing=None,lon_spacing=None,time_step=None):
 		trans_geo = GeoClass(lat_sep=lat_spacing,lon_sep=lon_spacing,time_step=time_step)
 		file_name = trans_geo.make_filename()
-		return cls.load(file_name)
+		return cls.load(file_name,GeoClass)
 
 	@classmethod
-	def load(cls,filename):
+	def load(cls,filename,GeoClass=TransitionGeo):
 		with open(filename,'rb') as pickle_file:
 			out_data = pickle.load(pickle_file)
-		out_data = cls.new_from_old(out_data)
+		out_data = cls.new_from_old(out_data,GeoClass)
 		return out_data
 
 	@classmethod
-	def new_from_old(cls,transition_matrix):
+	def new_from_old(cls,transition_matrix,GeoClass=TransitionGeo):
 		old_trans_geo = transition_matrix.trans_geo
-		trans_geo = TransitionGeo.new_from_old(old_trans_geo)
+		trans_geo = GeoClass.new_from_old(old_trans_geo)
 		assert isinstance(trans_geo.total_list,GeoList) 
 		row_idx,column_idx,data = scipy.sparse.find(transition_matrix)
 		return cls((data,(row_idx,column_idx)),
@@ -303,16 +303,23 @@ class TransMat(BaseMat):
 		if rescale:
 			self.rescale()
 
-	def distribution_and_mean_of_column(self,col_idx,pad = 8):
-		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
+	def mean_of_column(self,geo_point):
+		col_idx = self.trans_geo.total_list.index(geo_point)
+		start_lat,start_lon,dummy = tuple(geo_point)
 		idx_lat,idx_lon,dummy = tuple(self.trans_geo.total_list[col_idx])
 		east_west, north_south = self.return_mean()
 		x_mean = east_west[col_idx]+idx_lon
 		y_mean = north_south[col_idx]+idx_lat
-		XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=pad).get_map()
-		plt.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()))
-		plt.colorbar()
-		plt.scatter(x_mean,y_mean,c='pink',linewidths=5,marker='x',s=80,zorder=10)
+		return geopy.Point(y_mean,x_mean)
+
+	def distribution_and_mean_of_column(self,geo_point,pad = 6,ax=False):
+		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
+		col_idx = self.trans_geo.total_list.index(geo_point)
+		mean = self.mean_of_column(geo_point)
+		XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=pad,ax=ax).get_map()
+		ax.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()),cmap='Blues')
+		ax.scatter(mean.longitude,mean.latitude,c='pink',linewidths=10,marker='x',s=160,zorder=10)
+		ax.scatter(geo_point.longitude,geo_point.latitude,c='red',linewidths=10,marker='x',s=160,zorder=10)
 
 	def remove_small_values(self,value):
 		row_idx,column_idx,data = scipy.sparse.find(self)
@@ -350,7 +357,7 @@ class TransMat(BaseMat):
 			self.trans_geo.get_direction_matrix()
 		ew_scaled = self.new_sparse_matrix(self.trans_geo.east_west[row_list, column_list]*data_array*self.trans_geo.lon_sep).sum(axis=0)
 		ew_scaled = np.array(ew_scaled).flatten()
-		ns_scaled = self.new_sparse_matrix(self.trans_geo.north_south[row_list, column_list]*data_array*self.trans_geo.lon_sep).sum(axis=0)
+		ns_scaled = self.new_sparse_matrix(self.trans_geo.north_south[row_list, column_list]*data_array*self.trans_geo.lat_sep).sum(axis=0)
 		ns_scaled = np.array(ns_scaled).flatten()
 		return(ew_scaled,ns_scaled)
 
@@ -424,17 +431,17 @@ class TransMat(BaseMat):
 		new_trans_geo = self.trans_geo.__class__(lat_sep=lat_sep,lon_sep=lon_sep,time_step=self.trans_geo.time_step)
 		reduced_res_lat_bins = new_trans_geo.get_lat_bins()
 		reduced_res_lon_bins = new_trans_geo.get_lon_bins()
-		lat_bins,lon_bins = zip(*self.trans_geo.tuple_total_list())
+		lat_bins,lon_bins = self.trans_geo.total_list.lats_lons()
 		lat_idx = np.digitize(lat_bins,reduced_res_lat_bins)-1
 		lon_idx = np.digitize(lon_bins,reduced_res_lon_bins)-1
 
 		reduced_res_bins=[(reduced_res_lat_bins[i],reduced_res_lon_bins[j]) for i,j in zip(lat_idx,lon_idx)]
 		reduced_res_total_list = [geopy.Point(x) for x in list(set((reduced_res_bins)))]
 		new_trans_geo.set_total_list(reduced_res_total_list)
-		translation_list = [new_trans_geo.tuple_total_list().index(x) for x in reduced_res_bins]
+		translation_list = [new_trans_geo.total_list.tuple_total_list().index(x) for x in reduced_res_bins]
 		check = [(np.array(translation_list)==x).sum()<=(lat_mult*lon_mult) for x in range(len(reduced_res_total_list))]
 		assert all(check)
-		translation_dict = dict(zip(range(len(self.trans_geo.tuple_total_list())),translation_list))
+		translation_dict = dict(zip(range(len(self.trans_geo.total_list.tuple_total_list())),translation_list))
 		
 		old_row_idx,old_column_idx,old_data = scipy.sparse.find(self)
 		new_row_idx = np.array([translation_dict[ii] for ii in old_row_idx])
@@ -452,7 +459,7 @@ class TransMat(BaseMat):
 			out_row.append(row_dummy)
 		mat_dim = len(reduced_res_total_list)
 		return self.__class__((out_data,(out_row,out_col)),shape=(mat_dim,mat_dim),trans_geo=new_trans_geo
-				,number_data=None,rescale=True)	
+				,number_data=None,rescale=True)
 
 	def save_trans_matrix_to_json(self,foldername):
 		for column in range(self.shape[1]):
