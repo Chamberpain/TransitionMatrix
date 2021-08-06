@@ -17,21 +17,19 @@ import geopy
 
 file_handler = FilePathHandler(ROOT_DIR,'trans_read')
 
-class TransitionGeo(object):
+class GeoBase(object):
 	""" geo information and tools for transition matrices """
 	plot_class = GlobalCartopy
 	file_type = 'argo'
 	number_vmin=0
 	number_vmax=250
 	std_vmax=50
-	def __init__(self,lat_sep=2,lon_sep=2,time_step=60):
+	def __init__(self,lat_sep=2,lon_sep=2):
 		assert isinstance(lat_sep,int)
 		assert isinstance(lon_sep,int)
-		assert isinstance(time_step,int)
 
 		self.lat_sep = lat_sep
 		self.lon_sep = lon_sep
-		self.time_step = time_step
 
 	def plot_setup(self,ax=False):
 		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax).get_map()
@@ -39,32 +37,31 @@ class TransitionGeo(object):
 
 	def set_total_list(self,total_list):
 		lats,lons,dummy = zip(*[tuple(x) for x in total_list])
-		assert isinstance(total_list,list) 
-		#total list must be a list
+		lons = [x if x<180 else x-360 for x in lons]
+		total_list = GeoList([geopy.Point(x) for x in zip(lats,lons)],lat_sep=self.lat_sep, lon_sep=self.lon_sep)
+		lats,lons = total_list.lats_lons()
+		assert isinstance(total_list,GeoList) 
+		#total list must be a geolist
 		assert (set(lats).issubset(set(self.get_lat_bins())))&(set(lons).issubset(set(self.get_lon_bins())))
 		# total list must be a subset of the coordinate lists
 		total_list = GeoList(total_list,lat_sep=self.lat_sep,lon_sep=self.lon_sep)
 		self.total_list = total_list #make sure they are unique
 
 	def get_lat_bins(self):
-		lat_bins = np.arange(-90,90.1,self.lat_sep)
-		assert lat_bins.max()<=90
-		assert lat_bins.min()>=-90
-		return lat_bins
+		lat_grid,lon_grid = GeoList([],lat_sep=self.lat_sep,lon_sep=self.lon_sep).return_dimensions()
+		return lat_grid
 
 	def get_lon_bins(self):
-		lon_bins = np.arange(-180,180.1,self.lon_sep)
-		assert lon_bins.max()<=180
-		assert lon_bins.min()>=-180
-		return lon_bins
+		lat_grid,lon_grid = GeoList([],lat_sep=self.lat_sep,lon_sep=self.lon_sep).return_dimensions()
+		return lon_grid
 
 	def get_coords(self):
 		XX,YY = np.meshgrid(self.get_lon_bins(),self.get_lat_bins())
 		return (XX,YY)
 
 	def transition_vector_to_plottable(self,vector):
-		lon_grid = self.get_lon_bins().tolist()
-		lat_grid = self.get_lat_bins().tolist()
+		lon_grid = self.get_lon_bins()
+		lat_grid = self.get_lat_bins()
 		plottable = np.zeros([len(lon_grid),len(lat_grid)])
 		plottable = np.ma.masked_equal(plottable,0)
 		for n,pos in enumerate(self.total_list):
@@ -84,9 +81,6 @@ class TransitionGeo(object):
 			assert abs(lat_grid[lat_index]-lat)<2
 			vector[n] = plottable[lat_index,lon_index]
 		return vector
-
-	def make_filename(self):
-		return file_handler.tmp_file(self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
 
 	def get_direction_matrix(self):
 		"""
@@ -111,6 +105,17 @@ class TransitionGeo(object):
 		assert (self.east_west>=-180/self.lon_sep).all()
 		assert (self.north_south>=-180/self.lat_sep).all()
 		assert (self.north_south<=180/self.lat_sep).all()
+
+
+
+class TransitionGeo(GeoBase):
+	def __init__(self,*args,time_step=60,**kwargs):
+		super().__init__(*args,**kwargs)
+		assert isinstance(time_step,int)
+		self.time_step = time_step
+
+	def make_filename(self):
+		return file_handler.tmp_file(self.file_type+'-'+str(self.time_step)+'-'+str(self.lat_sep)+'-'+str(self.lon_sep))
 
 	@classmethod
 	def new_from_old(cls,trans_geo):
@@ -171,12 +176,14 @@ class SOSEWithholdingGeo(SOSECaseGeo):
 		return trans_geo
 
 class BaseMat(scipy.sparse.csc_matrix):
-	"""Base class for transition and correlation matrices, we include the timestep moniker for posterity. Time step for correlation matrices 
-	means the L scaling """
+	"""Base class for transition and correlation matrices"""
 	def __init__(self, *args,trans_geo=None,**kwargs):
 		super().__init__(*args,**kwargs)
 		if trans_geo:
 			self.set_trans_geo(trans_geo)
+
+	def set_trans_geo(self,trans_geo):
+		self.trans_geo = trans_geo.__class__.new_from_old(trans_geo)
 
 	@classmethod
 	def load_from_type(cls,GeoClass=TransitionGeo,lat_spacing=None,lon_spacing=None,time_step=None):
@@ -190,6 +197,13 @@ class BaseMat(scipy.sparse.csc_matrix):
 			out_data = pickle.load(pickle_file)
 		out_data = cls.new_from_old(out_data,GeoClass)
 		return out_data
+
+	def save(self,filename=False):
+		if not filename:
+			filename = self.trans_geo.make_filename()
+		with open(filename, 'wb') as pickle_file:
+			pickle.dump(self,pickle_file)
+		pickle_file.close()
 
 	@classmethod
 	def new_from_old(cls,transition_matrix,GeoClass=TransitionGeo):
@@ -240,11 +254,17 @@ class BaseMat(scipy.sparse.csc_matrix):
 		   other.data,
 		   indptr, indices, data)
 		if issubclass(type(self),TransMat):
-			A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
-				,number_data=self.number_data)
+			try:
+				A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+					,number_data=self.number_data)
+			except AttributeError:
+				A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo)
 		else:
-			A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
-				,number_data=self.number_data)
+			try:
+				A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+					,number_data=self.number_data)
+			except AttributeError:
+				A = self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo)				
 		A.prune()
 
 		return A
@@ -338,16 +358,6 @@ class TransMat(BaseMat):
 			mat_holder = mat1.dot(mat2)
 			mat1 = mat_holder.remove_small_values(mat_holder.data.mean()/25)
 		return mat1
-
-	def set_trans_geo(self,trans_geo):
-		self.trans_geo = trans_geo.__class__.new_from_old(trans_geo)
-
-	def save(self,filename=False):
-		if not filename:
-			filename = self.trans_geo.make_filename()
-		with open(filename, 'wb') as pickle_file:
-			pickle.dump(self,pickle_file)
-		pickle_file.close()
 
 	def return_mean(self):
 		row_list, column_list, data_array = scipy.sparse.find(self)

@@ -1,9 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import os, sys
-from TransitionMatrix.Utilities.Compute.trans_read import BaseMat,TransMat
-from TransitionMatrix.Utilities.Plot.plot_utils import cartopy_setup,transition_vector_to_plottable,plottable_to_transition_vector
-from TransitionMatrix.Utilities.Plot.argo_data import Argo,SOCCOM
+from GeneralUtilities.Compute.list import GeoList,VariableList
+from TransitionMatrix.Utilities.Compute.trans_read import BaseMat,TransMat,GeoBase
+from TransitionMatrix.Utilities.Plot.argo_data import Core,BGC
 from TransitionMatrix.Utilities.Plot.transition_matrix_plot import TransPlot
 from GeneralUtilities.Compute.list import find_nearest
 import scipy 
@@ -14,68 +14,91 @@ from scipy.interpolate import interp2d
 from shapely.geometry import Point, Polygon
 import random
 from GeneralUtilities.Filepath.instance import FilePathHandler
-
+from GeneralUtilities.Plot.Cartopy.eulerian_plot import SOSECartopy,GOMCartopy,CCSCartopy
 
 file_handler = FilePathHandler(ROOT_DIR,'target_load')
 noise_factor = 2
 unit_dict = {'salt':'psu','temp':'C','dic':'mol m$^{-2}$','o2':'mol m$^{-2}$'}
 
+class InverseGeo(GeoBase):
+	chl_depth_idx = 10
+	variable_translation_dict = {'thetao':'TEMP','so':'PSAL','ph':'PH_IN_SITU_TOTAL','chl':'CHLA','o2':'DOXY'}
+	def __init__(self,*args,l=300,depth_idx = None,**kwargs):
+		super().__init__(*args,**kwargs)
+		assert isinstance(l,int)
+		self.l = l
+		self.depth_idx = depth_idx
+		if self.depth_idx<self.chl_depth_idx:
+			self.variable_list = VariableList(['thetao','so','ph','chl','o2'])
+		else:
+			self.variable_list = VariableList(['thetao','so','ph','o2'])
+
+	def make_filename(self):
+		return file_handler.tmp_file(self.file_type+'-'+str(self.depth_idx)+'-'+str(self.l)+str(self.lat_sep)+'-'+str(self.lon_sep))
+
+	@classmethod
+	def new_from_old(cls,trans_geo):
+		new_trans_geo = cls(lat_sep=trans_geo.lat_sep,lon_sep=trans_geo.lon_sep,l=trans_geo.l,depth_idx=trans_geo.depth_idx)
+		new_trans_geo.set_total_list(trans_geo.total_list)
+		assert isinstance(new_trans_geo.total_list,GeoList) 
+		return new_trans_geo
+
+class InverseSOSE(InverseGeo):
+	plot_class = SOSECartopy
+	file_type = 'InverseSOSE'
+
+
+class InverseGOM(InverseGeo):
+	plot_class = GOMCartopy
+	file_type = 'InverseGOM'
+
+
+class InverseCCS(InverseGeo):
+	plot_class = CCSCartopy
+	file_type = 'InverseCCS'
+
+
+
 class CovBase(BaseMat):
 	""" This class uses the L to mean the length scale
 	class is mostly used for inverse calculations and generating specifically plottable instances"""
-	def __init__(self,arg1,shape=None,total_list=None,lat_spacing=None,lon_spacing=None,l=None,traj_file_type=None,**kwargs):
-		self.l = l
-		super(CovBase,self).__init__(arg1, shape=shape,total_list=total_list,lat_spacing=lat_spacing,lon_spacing=lon_spacing,traj_file_type=traj_file_type,**kwargs)
+	def __init__(self,*args,**kwargs):
+		super().__init__(*args,**kwargs)
+
+	@classmethod
+	def new_from_old(cls,transition_matrix,GeoClass=InverseGeo):
+		old_trans_geo = transition_matrix.trans_geo
+		trans_geo = GeoClass.new_from_old(old_trans_geo)
+		assert isinstance(trans_geo.total_list,GeoList) 
+		row_idx,column_idx,data = scipy.sparse.find(transition_matrix)
+		mat_dim = len(transition_matrix.trans_geo.total_list)*len(trans_geo.variable_list)
+		return cls((data,(row_idx,column_idx)),shape=(mat_dim,mat_dim),trans_geo=trans_geo) 
+
+	@classmethod
+	def load_from_type(cls,GeoClass,lat_sep=None,lon_sep=None,l=None,depth_idx=None):
+		trans_geo = GeoClass(lat_sep=lat_sep,lon_sep=lon_sep,l = 5*l,depth_idx=depth_idx)
+		file_name = trans_geo.make_filename()
+		large_scale = cls.load(file_name,trans_geo)
+		trans_geo = GeoClass(lat_sep=lat_sep,lon_sep=lon_sep,l = l,depth_idx=depth_idx)
+		file_name = trans_geo.make_filename()
+		small_scale = cls.load(file_name,trans_geo)
+		return large_scale+small_scale
 
 class InverseInstance(CovBase):
-	def __init__(self,arg1,shape=None,total_list=None,lat_spacing=None,lon_spacing=None,l=None,variable_list=None,traj_file_type='covariance',**kwargs):
-		super(InverseInstance,self).__init__(arg1, shape=shape,total_list=total_list,lat_spacing=lat_spacing,lon_spacing=lon_spacing,l=l,traj_file_type=traj_file_type,**kwargs)
-		try:
-			variable_list = [x.decode("utf-8") for x in variable_list]
-		except (AttributeError,TypeError) as e:
-			pass
-		self.variable_list = variable_list
+	def __init__(self,*args,**kwargs):
+		super().__init__(*args,**kwargs)
 
 	def get_cov(self,row_var,col_var):
-		row_idx = self.variable_list.index(row_var)
-		col_idx = self.variable_list.index(col_var)
-		split_array = np.split(np.split(self.todense(),len(self.variable_list))[row_idx],len(self.variable_list),axis=1)[col_idx]
-		return CovInstance(split_array,split_array.shape,self.total_list,self.degree_bins[0],self.degree_bins[1],self.l,row_var,col_var)
-
-	def save(self,filename=False):
-		if not filename:
-			filename = self.make_filename(traj_type=self.traj_file_type,degree_bins=self.degree_bins,l=self.l)
-		np.savez(filename, data=self.data, indices=self.indices,indptr=self.indptr, 
-		shape=self.shape, total_list=self.total_list,lat_spacing=self.degree_bins[0],
-		lon_spacing=self.degree_bins[1],
-		traj_file_type=self.traj_file_type,l=self.l,variable_list=self.variable_list)
-
-	@staticmethod
-	def load(filename):
-		loader = np.load(filename,allow_pickle=True)
-		print(loader['lat_spacing'])
-		return InverseInstance((loader['data'], loader['indices'], loader['indptr']),shape=loader['shape'],
-			total_list = loader['total_list'],lat_spacing=loader['lat_spacing'],
-			lon_spacing=loader['lon_spacing'],l=loader['l'],traj_file_type=loader['traj_file_type'],variable_list = loader['variable_list'].tolist())
-
-	@staticmethod
-	def load_from_type(lat_spacing=None,lon_spacing=None,l=None,traj_type=None):
-		degree_bins = [np.array(float(lat_spacing)),np.array(float(lon_spacing))]
-		file_name = InverseInstance.make_filename(traj_type=traj_type,degree_bins=degree_bins,l=l)
-		return InverseInstance.load(file_name)
-
-	@staticmethod
-	def make_filename(traj_type=None,degree_bins=None,l=None):
-		base = ROOT_DIR+'/Output/Data/'
-		degree_bins = [float(degree_bins[0]),float(degree_bins[1])]
-		return file_handler.tmp_file(traj_type+'/'+str(l)+'-'+str(degree_bins)+'.npz')
-
+		row_idx = self.trans_geo.variable_list.index(row_var)
+		col_idx = self.trans_geo.variable_list.index(col_var)
+		split_array = np.split(np.split(self.todense(),len(self.trans_geo.variable_list))[row_idx],len(self.trans_geo.variable_list),axis=1)[col_idx]
+		return CovInstance(split_array,split_array.shape,trans_geo=self.trans_geo,var1=row_var,var2=col_var)
 
 class CovInstance(CovBase):
-	def __init__(self,arg1,shape=None,total_list=None,lat_spacing=None,lon_spacing=None,l=None,var1=None,var2=None,traj_file_type='covariance_instance',**kwargs):
+	def __init__(self,*args,var1=None,var2=None,**kwargs):
+		super().__init__(*args,**kwargs)
 		self.var1 = var1
 		self.var2 = var2
-		super(CovInstance,self).__init__(arg1, shape=shape,total_list=total_list,lat_spacing=lat_spacing,lon_spacing=lon_spacing,l=l,traj_file_type=traj_file_type,**kwargs)
 
 	def plot_variance(self):
 		base = ROOT_DIR+'/plots/cm2p6_covariance/'
@@ -97,92 +120,32 @@ class CovInstance(CovBase):
 		plt.close()
 
 class HInstance(scipy.sparse.csc_matrix):
-	translation_dict ={'temp':'thetao','salt':'so','dic':'ph'}
-	def __init__(self, arg1, shape=None,**kwargs):
-		super(HInstance,self).__init__(arg1, shape=shape,**kwargs)
+	def __init__(self,*args,trans_geo=None,**kwargs):
+		self.trans_geo = trans_geo
+		super().__init__(*args,**kwargs)
 
-	@staticmethod
-	def randomly_generate(number,total_list=None,variable_list=None,degree_bins=None,limit=[-181,181,-90,90]):
-		if type(total_list)==np.ndarray:
-			total_list = total_list.tolist()
-		lllon,urlon,lllat,urlat = limit
-		coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
-		poly = Polygon(coords)
-		total_truth = [Point(x[0],x[1]).within(poly) for x in total_list]
-		total_list_holder = np.array(total_list)[total_truth].tolist()
-		locations = []
-		while number > 0:
-			if number>len(total_list): 
-				print('number is greater than total_list')
-				num_holder = len(total_list)
-				print(num_holder)
-			else:
-				num_holder = number
-			lat,lon = zip(*random.sample(total_list,num_holder))
-			for var in variable_list:
-				locations += list(zip(lon,lat,[var]*len(lat)))
-			number -= len(total_list)
+	@classmethod
+	def recent_floats(cls,GeoClass, FloatClass):
+		block_mat = np.zeros([len(GeoClass.variable_list),len(GeoClass.variable_list)]).tolist()
+		for k,variable in enumerate(GeoClass.variable_list):
+			float_var = GeoClass.variable_translation_dict[variable]
+			var_grid = FloatClass.recent_bins_by_sensor(float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+			idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
+			holder_array = np.zeros([len(GeoClass.total_list),len(idx_list)])
+			for ii,idx in enumerate(idx_list):
+				holder_array[idx,ii]+=1
+			block_mat[k][k] = holder_array
 
-			# print(locations)
-		return HInstance.generate_from_locations(locations,total_list=total_list,variable_list=variable_list,degree_bins=degree_bins)
+		for k in range(len(block_mat)):
+			holder = np.zeros(block_mat[k][k].shape)
+			for j in range(len(block_mat)):
+				if k==j:
+					continue
+				else:
+					block_mat[j][k]=holder
+		out = np.block(block_mat)
+		return cls(out,trans_geo=GeoClass)
 
-	@staticmethod
-	def generate_from_transition_matrix(float_list,transmat = None,new_total_list=None,variable_list=None,degree_bins=None):
-		var_translate_dict = {'thetao':'temp','so':'salt','ph':'dic','o2':'o2','chl':'chl'}
-		variable_list = [var_translate_dict[x] for x in variable_list]
-		translation_dict = {}
-		old_total_list = float_list[0].total_list
-
-		old_total_list = [list(x) for x in old_total_list]
-		new_total_list = [list(x) for x in new_total_list]
-		for k,bin_tuple in enumerate(old_total_list):
-			try:
-				translation_dict[k]=new_total_list.index(list(bin_tuple))
-			except ValueError:
-				pass
-		print('completed the dictionary, it looks like')
-		print(translation_dict)
-		if transmat is None:
-			transmat = scipy.sparse.csc_matrix(np.identity(len(old_total_list)))
-		row_list = []
-		col_list = []
-		data_list = []
-		k = 0
-		for dummy_float in float_list:
-			dummy_float.variables = [x for x in dummy_float.variables if x in variable_list]
-			for row_idx,col_idx,float_num in zip(*scipy.sparse.find(dummy_float)):
-				for _ in range(float_num):
-					k += 1
-
-					try:
-						row_instance,col_instance,data_instance = scipy.sparse.find(transmat[:,row_idx])
-					except IndexError:
-						print('there was an error in transmat parsing, it looks like')
-						print(transmat)
-						raise
-					row_mask = [x in translation_dict.keys() for x in row_instance]
-
-					row_instance = [translation_dict[x] for x in row_instance if x in translation_dict.keys()]
-					for var in dummy_float.variables:
-						print(var)
-						var_idx = variable_list.index(var)
-						row_list += [var_idx*len(new_total_list)+x for x in row_instance]
-
-					data_list += data_instance[row_mask].tolist()*len(dummy_float.variables)
-					col_list += [k] * len(row_instance)*len(dummy_float.variables)
-					assert len(col_list)==len(row_list)
-					assert len(data_list)==len(row_list)
-		return HInstance((data_list,(row_list,col_list)),shape = (len(new_total_list)*len(variable_list),max(col_list)+1))
-
-	@ staticmethod
-	def generate_from_float_class(float_class_list,variable_list=None):
-		locations = []
-		for float_class in float_class_list:
-				lat = float_class.df.latitude.tolist()
-				lon = float_class.df.longitude.tolist()
-				for var in float_class.variables:
-						locations += zip(lat,lon,[var]*len(lat))
-		return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
 
 
 	@ staticmethod
@@ -223,6 +186,108 @@ class HInstance(scipy.sparse.csc_matrix):
 		H = scipy.sparse.csc_matrix((data,(row_idx,col_idx)),shape=(len(col_idx),len(total_list)*len(variable_list)))
 		H = H.T
 		return HInstance(H,H.shape)
+
+
+
+	# @staticmethod
+	# def randomly_generate(number,total_list=None,variable_list=None,degree_bins=None,limit=[-181,181,-90,90]):
+	# 	if type(total_list)==np.ndarray:
+	# 		total_list = total_list.tolist()
+	# 	lllon,urlon,lllat,urlat = limit
+	# 	coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
+	# 	poly = Polygon(coords)
+	# 	total_truth = [Point(x[0],x[1]).within(poly) for x in total_list]
+	# 	total_list_holder = np.array(total_list)[total_truth].tolist()
+	# 	locations = []
+	# 	while number > 0:
+	# 		if number>len(total_list): 
+	# 			print('number is greater than total_list')
+	# 			num_holder = len(total_list)
+	# 			print(num_holder)
+	# 		else:
+	# 			num_holder = number
+	# 		lat,lon = zip(*random.sample(total_list,num_holder))
+	# 		for var in variable_list:
+	# 			locations += list(zip(lon,lat,[var]*len(lat)))
+	# 		number -= len(total_list)
+
+	# 		# print(locations)
+	# 	return HInstance.generate_from_locations(locations,total_list=total_list,variable_list=variable_list,degree_bins=degree_bins)
+
+	# @classmethod
+	# def recent_floats(cls,GeoClass, FloatClass):
+	# 	out_list = []
+	# 	for variable in GeoClass.variable_list:
+	# 		float_var = GeoClass.variable_translation_dict[variable]
+	# 		var_grid = FloatClass.recent_bins_by_sensor(float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+	# 		idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
+	# 		holder_array = np.zeros([len(GeoClass.total_list),1])
+	# 		for idx in idx_list:
+	# 			holder_array[idx]+=1
+	# 		out_list.append(holder_array)
+	# 	out = np.vstack(out_list)
+	# 	return cls(out,trans_geo=GeoClass)
+
+	# @staticmethod
+	# def generate_from_transition_matrix(float_list,transmat = None,new_total_list=None,variable_list=None,degree_bins=None):
+	# 	var_translate_dict = {'thetao':'temp','so':'salt','ph':'dic','o2':'o2','chl':'chl'}
+	# 	variable_list = [var_translate_dict[x] for x in variable_list]
+	# 	translation_dict = {}
+	# 	old_total_list = float_list[0].total_list
+
+	# 	old_total_list = [list(x) for x in old_total_list]
+	# 	new_total_list = [list(x) for x in new_total_list]
+	# 	for k,bin_tuple in enumerate(old_total_list):
+	# 		try:
+	# 			translation_dict[k]=new_total_list.index(list(bin_tuple))
+	# 		except ValueError:
+	# 			pass
+	# 	print('completed the dictionary, it looks like')
+	# 	print(translation_dict)
+	# 	if transmat is None:
+	# 		transmat = scipy.sparse.csc_matrix(np.identity(len(old_total_list)))
+	# 	row_list = []
+	# 	col_list = []
+	# 	data_list = []
+	# 	k = 0
+	# 	for dummy_float in float_list:
+	# 		dummy_float.variables = [x for x in dummy_float.variables if x in variable_list]
+	# 		for row_idx,col_idx,float_num in zip(*scipy.sparse.find(dummy_float)):
+	# 			for _ in range(float_num):
+	# 				k += 1
+
+	# 				try:
+	# 					row_instance,col_instance,data_instance = scipy.sparse.find(transmat[:,row_idx])
+	# 				except IndexError:
+	# 					print('there was an error in transmat parsing, it looks like')
+	# 					print(transmat)
+	# 					raise
+	# 				row_mask = [x in translation_dict.keys() for x in row_instance]
+
+	# 				row_instance = [translation_dict[x] for x in row_instance if x in translation_dict.keys()]
+	# 				for var in dummy_float.variables:
+	# 					print(var)
+	# 					var_idx = variable_list.index(var)
+	# 					row_list += [var_idx*len(new_total_list)+x for x in row_instance]
+
+	# 				data_list += data_instance[row_mask].tolist()*len(dummy_float.variables)
+	# 				col_list += [k] * len(row_instance)*len(dummy_float.variables)
+	# 				assert len(col_list)==len(row_list)
+	# 				assert len(data_list)==len(row_list)
+	# 	return HInstance((data_list,(row_list,col_list)),shape = (len(new_total_list)*len(variable_list),max(col_list)+1))
+
+	@ staticmethod
+	def generate_from_float_class(float_class_list,variable_list=None):
+		locations = []
+		for float_class in float_class_list:
+				lat = float_class.df.latitude.tolist()
+				lon = float_class.df.longitude.tolist()
+				for var in float_class.variables:
+						locations += zip(lat,lon,[var]*len(lat))
+		return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
+
+
+
 
 def plot_all_covariance():
 	""" There might be a problem with this because the cov in the lower triangular matrix might be transposed, need to ask bruce"""
@@ -268,17 +333,16 @@ def plot_example_variance_constrained():
 			plt.close()
 
 def plot_array_variance_constrained():
-	base = ROOT_DIR+'/plots/cm2p6_covariance/'
-	global_cov = InverseInstance.load_from_type(2,2,1500,'global_covariance')
-	submeso_cov = InverseInstance.load_from_type(2,2,300,'submeso_covariance')
+	inverse_mat = InverseInstance.load_from_type(InverseGeo,lat_sep=2,lon_sep=2,l=300,depth_idx=2)
 	argo = Argo.recent_floats(global_cov.degree_bins,global_cov.total_list)
 	argo.df = argo.df[argo.df.latitude<-10]
 	soccom = SOCCOM.recent_floats(global_cov.degree_bins,global_cov.total_list)
 
 	cov = global_cov+submeso_cov
 	hinstance = HInstance.generate_from_float_class([soccom],variable_list=global_cov.variable_list)
-	output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
-	noise = scipy.sparse.diags(cov.diagonal()[output_mask]*noise_factor)
+	hinstance = hinstance.T
+	dummy,rows = np.where((hinstance>0).todense())
+	noise = scipy.sparse.diags(cov.diagonal()[rows]*noise_factor)
 	def calculate(cov):
 
 		denom = hinstance.dot(cov).dot(hinstance.T)+noise
@@ -289,6 +353,24 @@ def plot_array_variance_constrained():
 
 	cov_subtract = calculate(cov)
 	p_hat = cov-cov_subtract
+
+
+	phat = np.load('phat.npy')
+	cov = np.load('cov.npy')
+	temp_p,salt_p,ph_p,chl_p,o2_p = np.split(phat,5)
+	temp_cov,salt_cov,ph_cov,chl_cov,o2_cov = np.split(cov,5)
+
+	for p_holder,cov_holder,title in zip([temp_p,salt_p,ph_p,chl_p,o2_p],[temp_cov,salt_cov,ph_cov,chl_cov,o2_cov],['Temperature','Salinity','pH','Chlorophyll','Oxygen']):
+		plottable = inverse_mat.trans_geo.transition_vector_to_plottable((p_holder))
+		fig = plt.figure(figsize=(16,9))
+		ax = fig.add_subplot(1,1,1,projection=ccrs.PlateCarree())
+		XX,YY,ax = inverse_mat.trans_geo.plot_setup(ax=ax)
+		ax.pcolor(XX,YY,plottable,vmax=1,vmin=0)
+		PCM = ax.get_children()[0]
+		fig.colorbar(PCM,label='Formal Mapping Error')
+		ax.set_title(title)
+		plt.show()
+
 
 	lat_grid, lon_grid = cov.bins_generator(global_cov.degree_bins)
 	zipper = zip(np.split(p_hat.diagonal()/cov.diagonal(),4),global_cov.variable_list)

@@ -28,7 +28,7 @@ def figure_3():
 	ax1.scatter(argos_start_lon_list,argos_start_lat_list,s=0.5,c='r',label='ARGOS')
 	ax1.scatter(gps_start_lon_list,gps_start_lat_list,s=0.5,c='b',label='GPS')
 	ax1.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1),
-      		ncol=3, fancybox=True, shadow=True)
+      		ncol=3, fancybox=True, shadow=True, markerscale=20)
 
 	tp = TransPlot.load_from_type(lat_spacing=2,lon_spacing=2,time_step=90)
 	ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())

@@ -117,23 +117,35 @@ def sose_compare():
 def argos_gps_spatial_plot():
 	lat = 2
 	lon = 3 
-	date = 90
+	date = 180
 	argos_class = TransMat.load_from_type(GeoClass=ARGOSGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
 	gps_class = TransMat.load_from_type(GeoClass=GPSGeo,lat_spacing = lat,lon_spacing = lon,time_step = date)
-	(ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff) = matrix_compare(argos_class,gps_class)
+
+	for k in range(4):
+		print(k)
+		argos_class = argos_class.dot(argos_class)
+
+	for k in range(4):
+		print(k)
+		gps_class = gps_class.dot(gps_class)
+
+
 	fig = plt.figure(figsize=(10,5))
 	ax1 = fig.add_subplot(1,2,1, projection=ccrs.PlateCarree())
 	XX,YY,ax1 = argos_class.trans_geo.plot_setup(ax=ax1)
-	q = ax1.quiver(XX,YY,u=ew_mean_diff,v=ns_mean_diff,scale=100)
-	ax1.quiverkey(q, X=0.3, Y=1.1, U=5,
-             label='5 Degree', labelpos='E')
+	plottable = np.array(argos_class.sum(axis=1)).flatten()
+	ax1.pcolor(XX,YY,argos_class.trans_geo.transition_vector_to_plottable(plottable),vmin=0.4,vmax=1.6)
+
 	ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())
-	XX,YY,ax2 = argos_class.trans_geo.plot_setup(ax = ax2)
-	ax2.pcolormesh(XX,YY,ns_std_diff,vmin=-0.1,vmax=0.1,cmap='bwr')
+	XX,YY,ax2 = gps_class.trans_geo.plot_setup(ax = ax2)
+	plottable = np.array(gps_class.sum(axis=1)).flatten()
+	ax2.pcolor(XX,YY,gps_class.trans_geo.transition_vector_to_plottable(plottable),vmin=0.4,vmax=1.6)
+
+
 	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	PCM = ax2.get_children()[0]
-	plt.colorbar(PCM,ax=ax2)
+	plt.colorbar(PCM,ax=ax2, label='Relative Chance of Aggregation')
 	plt.savefig(plot_handler.out_file('argos_gps_comparison'))
 	plt.close()
 
@@ -349,10 +361,6 @@ def seasonal_plot():
 	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	plt.savefig(plot_handler.out_file('seasonal_stats_plot'))
 	plt.close()
-
-
-def resolution_difference_plot():
-
 
 
 def data_withholding_plot():

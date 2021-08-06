@@ -6,44 +6,20 @@ import os, sys
 import datetime
 from scipy.sparse.base import isspmatrix
 import scipy.sparse
-from TransitionMatrix.Utilities.Compute.trans_read import BaseMat
 import matplotlib.pyplot as plt
 import geopy
+import copy
+
 
 class Float(scipy.sparse.csc_matrix):
 	traj_file_type = 'float'
 	marker_color = 'm'
 	marker_size = 15
 
-	def __init__(self,arg,shape=None,df=pd.DataFrame({'latitude':[],'longitude':[]}),degree_bins=None,total_list=None):
-		super(Float,self).__init__(arg, shape=shape)
-		self.degree_bins = degree_bins
-		self.total_list = total_list
-		self.df = df
+	def __init__(self,*args,trans_geo=None,**kwargs):
+		self.trans_geo = trans_geo
+		super().__init__(*args,**kwargs)
 
-	@ staticmethod
-	def return_float_vector(trans_geo,df,total_list):
-		bins_lat = trans_geo.get_lat_bins()
-		bins_lon = trans_geo.get_lon_bins()
-
-		df['bins_lat'] = pd.cut(df.latitude,bins = bins_lat,labels=bins_lat[:-1])
-		df['bins_lon'] = pd.cut(df.longitude,bins = bins_lon,labels=bins_lon[:-1])
-		df['bin_index'] = list(zip(df['bins_lon'].values,df['bins_lat'].values))
-		float_vector = np.zeros((len(total_list),1))
-		row_idx = []
-		data = []
-		for x in df.groupby(['bin_index']).sum().Age_Percent.iteritems():
-			try:
-				row_idx.append(total_list.index(geopy.Point(x[0][1],x[0][0])))
-# this is terrible notation, but it finds the index in the index list of the touple bins_lat, bins_lon
-
-				data.append(x[1])
-			except ValueError:
-				print(str(x)+' is not found')
-		col_idx = [0]*len(row_idx)
-		arg1 = (data,(row_idx,col_idx))
-		shape = (len(total_list),1)
-		return (arg1,shape)
 
 	def __setitem__(self, index, x):
 		# Process arrays from IndexMixin
@@ -106,86 +82,43 @@ class Float(scipy.sparse.csc_matrix):
 		plottable = np.ma.masked_equal(plottable,0)
 		m.pcolormesh(XX,YY,plottable,vmin=0,vmax=min(100,self.data.max()))
 
-	@staticmethod
-	def get_age(df):
-		df_holder = df.drop_duplicates(subset=['Cruise'],keep='first')		
-		age = np.ceil((df.date.max()-df_holder.date).dt.days/360.).array
-		number = df.groupby(by='Cruise').agg('count')['date'].values
-		list_holder = []
-		for i,j in zip(age,number):
-			list_holder+=[i]*j
-		df['Age']=list_holder
-		df.loc[df.Age<1,'Age'] = 1
-		percent = 1/df['Age']
-		percent[percent<1/6.]=0
-		df['Age_Percent']=percent
-		return df
 
-	@staticmethod
-	def get_recent_df():
-		import datetime
-		df = Float.get_total_df()
-		recent_df = df[df.date>(df.date.max()-datetime.timedelta(days=60))]
-		recent_df = recent_df.drop_duplicates(subset=['Cruise'],keep='last')
-		return recent_df
-
-	@staticmethod
-	def get_total_df():
-		from argo_traj_box.argo_traj_box_utils import load_df
-		df = load_df()
-		df = Float.get_age(df)
-		return df
-
-
-class Argo(Float):
-	traj_file_type = 'argo'
+class Core(Float):
+	traj_file_type = 'Core'
 	marker_color = 'r'
 	marker_size = 5
-	variables = ['temp','salt']
-	def __init__(self,arg,**kwds):		
-		super(Argo,self).__init__(arg,**kwds)
 
+	@classmethod
+	def recent_floats(cls,GeoClass, FloatClass):
+		var_grid = FloatClass.recent_bins(GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+		idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
+		holder_array = np.zeros([len(GeoClass.total_list),1])
+		for idx in idx_list:
+			holder_array[idx]+=1
+		return cls(holder_array,trans_geo=GeoClass)
 
-	@staticmethod
-	def recent_floats(trans_geo,total_list,age=True):	
-		df = Float.get_recent_df()
-		if not age: 
-			df['Age_Percent']=1
-		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
-
-	@staticmethod
-	def total_floats(trans_geo,total_list,age=True):	
-		df = Float.get_total_df()
-		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
-
-
-
-class SOCCOM(Float):
-	traj_file_type = 'argo'	
+class BGC(Float):
+	traj_file_type = 'BGC'	
 	marker_color = 'm'
 	marker_size = 20
-	variables = ['temp','salt','dic','o2','chl']
-	def __init__(self,arg,**kwds):	
-		super(SOCCOM,self).__init__(arg,**kwds)
 
+	@classmethod
+	def recent_floats(cls,GeoClass, FloatClass):
+		out_list = []
+		for variable in GeoClass.variable_list:
+			float_var = GeoClass.variable_translation_dict[variable]
+			var_grid = FloatClass.recent_bins_by_sensor(float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+			idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
+			holder_array = np.zeros([len(GeoClass.total_list),1])
+			for idx in idx_list:
+				holder_array[idx]+=1
+			out_list.append(holder_array)
+		out = np.vstack(out_list)
+		return cls(out,trans_geo=GeoClass)
 
-	@staticmethod
-	def recent_floats(trans_geo,total_list,age=True):
-		df = Float.get_recent_df()
-		df = df[df['SOCCOM']]
-		if not age: 
-			df['Age_Percent']=1
-		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
-		return SOCCOM(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
-
-	@staticmethod
-	def total_floats(degree_bins,total_list,age=True):	
-		df = Float.get_total_df()
-		df = df[df['SOCCOM']]
-		if not age: 
-			df['Age_Percent']=1		
-		arg1,shape = Float.return_float_vector(trans_geo,df,total_list)
-		return Argo(arg1,shape=shape,df = df,degree_bins = (trans_geo.lat_sep,trans_geo.lon_sep),total_list = total_list)
-
+	def get_sensor(self,row_var):
+		row_idx = self.trans_geo.variable_list.index(row_var)
+		split_array = np.split(self.todense(),len(self.trans_geo.variable_list))[row_idx]
+		trans_geo = copy.deepcopy(self.trans_geo)
+		trans_geo.variable_list = [row_var]
+		return BGC(split_array,split_array.shape,trans_geo=trans_geo)
