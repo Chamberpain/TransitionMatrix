@@ -87,8 +87,8 @@ def matrix_resolution_decomp_1():
 	plt.close()
 
 def sose_compare():
-	fig = plt.figure(figsize=(10,5))
-	ax1 = fig.add_subplot(1,2,1, projection=ccrs.PlateCarree())
+	fig = plt.figure(figsize=(14,14))
+	ax1 = fig.add_subplot(2,1,1, projection=ccrs.PlateCarree())
 	lat = 1 
 	lon =2 
 	date = 180
@@ -98,7 +98,7 @@ def sose_compare():
 	XX,YY,ax1 = sose_mat.trans_geo.plot_setup(ax = ax1)
 	ax1.pcolormesh(XX,YY,ns_std_diff+ew_std_diff,vmin=-1,vmax=1,cmap='bwr')
 
-	ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())
+	ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
 	lat = 4 
 	lon =6 
 	date = 180
@@ -110,7 +110,7 @@ def sose_compare():
 	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	PCM = ax2.get_children()[0]
-	plt.colorbar(PCM,ax=ax2,label='Transition Diffusion')	
+	plt.colorbar(PCM,ax=[ax1,ax2],fraction=0.10,label='Transition Diffusion')	
 	plt.savefig(plot_handler.out_file('sose_total_std_diff'))
 	plt.close()
 
@@ -130,22 +130,22 @@ def argos_gps_spatial_plot():
 		gps_class = gps_class.dot(gps_class)
 
 
-	fig = plt.figure(figsize=(10,5))
-	ax1 = fig.add_subplot(1,2,1, projection=ccrs.PlateCarree())
+	fig = plt.figure(figsize=(14,14))
+	ax1 = fig.add_subplot(2,1,1, projection=ccrs.PlateCarree())
 	XX,YY,ax1 = argos_class.trans_geo.plot_setup(ax=ax1)
 	plottable = np.array(argos_class.sum(axis=1)).flatten()
-	ax1.pcolor(XX,YY,argos_class.trans_geo.transition_vector_to_plottable(plottable),vmin=0.4,vmax=1.6)
+	ax1.pcolor(XX,YY,argos_class.trans_geo.transition_vector_to_plottable(plottable)*100,vmin=40,vmax=160)
 
-	ax2 = fig.add_subplot(1,2,2, projection=ccrs.PlateCarree())
+	ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
 	XX,YY,ax2 = gps_class.trans_geo.plot_setup(ax = ax2)
 	plottable = np.array(gps_class.sum(axis=1)).flatten()
-	ax2.pcolor(XX,YY,gps_class.trans_geo.transition_vector_to_plottable(plottable),vmin=0.4,vmax=1.6)
+	ax2.pcolor(XX,YY,gps_class.trans_geo.transition_vector_to_plottable(plottable)*100,vmin=40,vmax=160)
 
 
-	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
-	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
+	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
+	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	PCM = ax2.get_children()[0]
-	plt.colorbar(PCM,ax=ax2, label='Relative Chance of Aggregation')
+	fig.colorbar(PCM,ax=[ax1,ax2],label='Argo Density (%)',fraction=0.10)
 	plt.savefig(plot_handler.out_file('argos_gps_comparison'))
 	plt.close()
 

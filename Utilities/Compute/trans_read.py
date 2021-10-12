@@ -3,7 +3,8 @@ from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
 from TransitionMatrix.Utilities.Compute.__init__ import ROOT_DIR
 from GeneralUtilities.Filepath.instance import FilePathHandler
-from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy,SOSECartopy
+from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
+from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
 
 import numpy as np
 import scipy.sparse
@@ -308,12 +309,17 @@ class BaseMat(scipy.sparse.csc_matrix):
 		   indptr, indices, data)
 
 		if issubclass(type(self),TransMat):
-			return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
-				,number_data=self.number_data)
+			try:
+				return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+					,number_data=self.number_data)
+			except AttributeError:
+				return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo)
 		else:
-			return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
-				,number_data=self.number_data)
-
+			try:
+				return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo
+					,number_data=self.number_data)
+			except AttributeError:
+				return self.__class__((data, indices, indptr), shape=self.shape,trans_geo=self.trans_geo)
 
 
 class TransMat(BaseMat):

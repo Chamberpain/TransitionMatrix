@@ -68,21 +68,6 @@ class Float(scipy.sparse.csc_matrix):
 		for _ in range(x):
 			self.df = pd.concat([self.df,pd.DataFrame({'latitude':[lat],'longitude':[lon]})])
 
-	def scatter_plot(self,ax=False): 
-		y = self.df.latitude.tolist()
-		x = self.df.longitude.tolist()
-		ax.scatter(x,y,marker='*',color=self.marker_color,s=self.marker_size)
-		return ax
-
-	def grid_plot(self,m=False):
-		(bins_lat,bins_lon)=BaseMat.bins_generator(self.degree_bins)
-		if not m:	
-			XX,YY,m = basemap_setup(bins_lat,bins_lon,self.traj_file_type)
-		plottable = transition_vector_to_plottable(bins_lat,bins_lon,self.total_list,np.array(self.todense()).ravel())
-		plottable = np.ma.masked_equal(plottable,0)
-		m.pcolormesh(XX,YY,plottable,vmin=0,vmax=min(100,self.data.max()))
-
-
 class Core(Float):
 	traj_file_type = 'Core'
 	marker_color = 'r'

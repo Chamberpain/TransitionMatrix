@@ -433,6 +433,16 @@ class CovCM4(CovArray):
 	def make_cov_filename(cls,variable_1,variable_2):
 		return cls.file_handler.tmp_file(variable_1+'_'+variable_2+'_cov')
 
+	@staticmethod
+	def return_dimensions():
+		master_list = CovCM4.get_filenames()
+		dh = Dataset( master_list[0][0][0])
+		depths = dh['lev'][:].data
+		lons = dh['lon'][:].data
+		lats = dh['lat'][:].data
+		return (lats,lons,depths)
+
+
 	def stack_data(self):
 		master_list = self.get_filenames()
 		array_variable_list = []

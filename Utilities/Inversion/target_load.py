@@ -5,7 +5,6 @@ from GeneralUtilities.Compute.list import GeoList,VariableList
 from TransitionMatrix.Utilities.Compute.trans_read import BaseMat,TransMat,GeoBase
 from TransitionMatrix.Utilities.Plot.argo_data import Core,BGC
 from TransitionMatrix.Utilities.Plot.transition_matrix_plot import TransPlot
-from GeneralUtilities.Compute.list import find_nearest
 import scipy 
 from netCDF4 import Dataset
 import matplotlib.cm as cm
@@ -14,7 +13,7 @@ from scipy.interpolate import interp2d
 from shapely.geometry import Point, Polygon
 import random
 from GeneralUtilities.Filepath.instance import FilePathHandler
-from GeneralUtilities.Plot.Cartopy.eulerian_plot import SOSECartopy,GOMCartopy,CCSCartopy
+from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy,GOMCartopy,CCSCartopy
 
 file_handler = FilePathHandler(ROOT_DIR,'target_load')
 noise_factor = 2
@@ -146,46 +145,64 @@ class HInstance(scipy.sparse.csc_matrix):
 		out = np.block(block_mat)
 		return cls(out,trans_geo=GeoClass)
 
+	@classmethod
+	def random_floats(cls,GeoClass,float_num):
+		holder_array = np.zeros([len(GeoClass.total_list),float_num])
+		idxs = list(range(len(GeoClass.total_list)))
+		subsampled_idx = random.sample(idxs,float_num)
+		for col,row in zip(range(float_num),subsampled_idx):
+			holder_array[row,col]=1
+		block_mat = np.zeros([len(GeoClass.variable_list),len(GeoClass.variable_list)]).tolist()
+		for k,variable in enumerate(GeoClass.variable_list):
+			block_mat[k][k] = holder_array
+		for k in range(len(block_mat)):
+			holder = np.zeros(block_mat[k][k].shape)
+			for j in range(len(block_mat)):
+				if k==j:
+					continue
+				else:
+					block_mat[j][k]=holder
+		out = np.block(block_mat)
+		return cls(out,trans_geo=GeoClass)
+
+	# @ staticmethod
+	# def generate_from_locations(locations,total_list=None,variable_list=None,degree_bins=None):
+	# 	if type(total_list)==np.ndarray:
+	# 		total_list = total_list.tolist()
+	# 	lat_list,lon_list = BaseMat.bins_generator(degree_bins)
+	# 	lat_loc_list = []
+	# 	lon_loc_list = []
+	# 	data = []
+	# 	col_idx = []
+	# 	column_idx = []
+	# 	for loc in locations:
+	# 		lat,lon,var = loc
+	# 		rounded_lat = find_nearest(lat_list,lat)
+	# 		rounded_lon = find_nearest(lon_list,lon)
+	# 		assert abs(rounded_lat-lat)<2
+	# 		assert abs(rounded_lon-lon)<2
+	# 		lat_loc_list.append(rounded_lat)
+	# 		lon_loc_list.append(rounded_lon)
+
+	# 		try:
+	# 			tl_idx = total_list.index([rounded_lon,rounded_lat])
+	# 		except ValueError:
+	# 			print('lat = '+str(rounded_lat)+' lon = '+str(rounded_lon)+' is a problem')
+	# 		if var in variable_list:
+	# 			vl_idx = variable_list.index(var)
+	# 		else:
+	# 			vl_idx = variable_list.index(HInstance.translation_dict[var])
 
 
-	@ staticmethod
-	def generate_from_locations(locations,total_list=None,variable_list=None,degree_bins=None):
-		if type(total_list)==np.ndarray:
-			total_list = total_list.tolist()
-		lat_list,lon_list = BaseMat.bins_generator(degree_bins)
-		lat_loc_list = []
-		lon_loc_list = []
-		data = []
-		col_idx = []
-		column_idx = []
-		for loc in locations:
-			lat,lon,var = loc
-			rounded_lat = find_nearest(lat_list,lat)
-			rounded_lon = find_nearest(lon_list,lon)
-			assert abs(rounded_lat-lat)<2
-			assert abs(rounded_lon-lon)<2
-			lat_loc_list.append(rounded_lat)
-			lon_loc_list.append(rounded_lon)
+	# 		column_idx.append(len(total_list)*vl_idx+tl_idx)
 
-			try:
-				tl_idx = total_list.index([rounded_lon,rounded_lat])
-			except ValueError:
-				print('lat = '+str(rounded_lat)+' lon = '+str(rounded_lon)+' is a problem')
-			if var in variable_list:
-				vl_idx = variable_list.index(var)
-			else:
-				vl_idx = variable_list.index(HInstance.translation_dict[var])
-
-
-			column_idx.append(len(total_list)*vl_idx+tl_idx)
-
-		for col in np.unique(column_idx):
-			data.append(np.sum(np.array(column_idx)==col))
-			col_idx.append(col)
-		row_idx = range(len(col_idx))
-		H = scipy.sparse.csc_matrix((data,(row_idx,col_idx)),shape=(len(col_idx),len(total_list)*len(variable_list)))
-		H = H.T
-		return HInstance(H,H.shape)
+	# 	for col in np.unique(column_idx):
+	# 		data.append(np.sum(np.array(column_idx)==col))
+	# 		col_idx.append(col)
+	# 	row_idx = range(len(col_idx))
+	# 	H = scipy.sparse.csc_matrix((data,(row_idx,col_idx)),shape=(len(col_idx),len(total_list)*len(variable_list)))
+	# 	H = H.T
+	# 	return HInstance(H,H.shape)
 
 
 
@@ -276,480 +293,480 @@ class HInstance(scipy.sparse.csc_matrix):
 	# 				assert len(data_list)==len(row_list)
 	# 	return HInstance((data_list,(row_list,col_list)),shape = (len(new_total_list)*len(variable_list),max(col_list)+1))
 
-	@ staticmethod
-	def generate_from_float_class(float_class_list,variable_list=None):
-		locations = []
-		for float_class in float_class_list:
-				lat = float_class.df.latitude.tolist()
-				lon = float_class.df.longitude.tolist()
-				for var in float_class.variables:
-						locations += zip(lat,lon,[var]*len(lat))
-		return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
+# 	@ staticmethod
+# 	def generate_from_float_class(float_class_list,variable_list=None):
+# 		locations = []
+# 		for float_class in float_class_list:
+# 				lat = float_class.df.latitude.tolist()
+# 				lon = float_class.df.longitude.tolist()
+# 				for var in float_class.variables:
+# 						locations += zip(lat,lon,[var]*len(lat))
+# 		return HInstance.generate_from_locations(locations,total_list=float_class.total_list,variable_list=variable_list,degree_bins=float_class.degree_bins)
 
 
 
 
-def plot_all_covariance():
-	""" There might be a problem with this because the cov in the lower triangular matrix might be transposed, need to ask bruce"""
-	cov = InverseInstance.load_from_type(2,2,300,'covariance')
-	for var1 in cov.variable_list:
-		for var2 in cov.variable_list:
-			cov_instance = cov.get_cov(var1,var2)
-			cov_instance.plot_variance()
+# def plot_all_covariance():
+# 	""" There might be a problem with this because the cov in the lower triangular matrix might be transposed, need to ask bruce"""
+# 	cov = InverseInstance.load_from_type(2,2,300,'covariance')
+# 	for var1 in cov.variable_list:
+# 		for var2 in cov.variable_list:
+# 			cov_instance = cov.get_cov(var1,var2)
+# 			cov_instance.plot_variance()
 
-def plot_example_variance_constrained():
-	invinst = InverseInstance.load_from_type(2,2,300) 
-	lat,lon = zip(*random.sample(invinst.total_list,300)) 
-	locations = zip(lat,lon,['dic']*len(lat))
-	hinstance = HInstance.generate_from_locations(locations,invinst.total_list,['temp'],invinst.degree_bins)
-	cov = invinst.get_cov('dic','dic')
-	output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
-	noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
-	denom = hinstance.dot(cov).dot(hinstance.T)+noise
-	denom = scipy.sparse.csc_matrix(denom)
-	inv_denom = scipy.sparse.linalg.inv(denom)
-	cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
-	p_hat = cov-cov_subtract        
+# def plot_example_variance_constrained():
+# 	invinst = InverseInstance.load_from_type(InverseGeo,lat_sep=2,lon_sep=2,l=300,depth_idx=2) 
+# 	lat,lon = zip(*random.sample(invinst.total_list,300)) 
+# 	locations = zip(lat,lon,['dic']*len(lat))
+# 	hinstance = HInstance.generate_from_locations(locations,invinst.total_list,['temp'],invinst.degree_bins)
+# 	cov = invinst.get_cov('dic','dic')
+# 	output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
+# 	noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
+# 	denom = hinstance.dot(cov).dot(hinstance.T)+noise
+# 	denom = scipy.sparse.csc_matrix(denom)
+# 	inv_denom = scipy.sparse.linalg.inv(denom)
+# 	cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
+# 	p_hat = cov-cov_subtract        
 
-	def plot_data(data):
-			(bins_lat,bins_lon)=BaseMat.bins_generator(cov.degree_bins)
-			plottable = transition_vector_to_plottable(bins_lat,bins_lon,invinst.total_list,data)
-			XX,YY,m = cartopy_setup(bins_lat,bins_lon,'argo')  
-			# mean = p_hat.diagonal().mean()
-			# std = p_hat.diagonal().std()
-			m.pcolormesh(XX,YY,plottable)
-			return m 
-	m = plot_data(p_hat.diagonal())
-	plt.savefig(ROOT_DIR+'/plots/example_phat')
-	plt.close()
-	m = plot_data(cov_subtract.diagonal())
-	plt.savefig(ROOT_DIR+'/plots/example_cov_subtract')
-	plt.close()
-	eigs = scipy.sparse.linalg.eigs(p_hat)
-	for k in range(6):
-			dummy = eigs[1][:,k]
-			m=plot_data(dummy)
-			plt.savefig(ROOT_DIR+'/plots/example_evec'+str(k))
-			plt.close()
+# 	def plot_data(data):
+# 			(bins_lat,bins_lon)=BaseMat.bins_generator(cov.degree_bins)
+# 			plottable = transition_vector_to_plottable(bins_lat,bins_lon,invinst.total_list,data)
+# 			XX,YY,m = cartopy_setup(bins_lat,bins_lon,'argo')  
+# 			# mean = p_hat.diagonal().mean()
+# 			# std = p_hat.diagonal().std()
+# 			m.pcolormesh(XX,YY,plottable)
+# 			return m 
+# 	m = plot_data(p_hat.diagonal())
+# 	plt.savefig(ROOT_DIR+'/plots/example_phat')
+# 	plt.close()
+# 	m = plot_data(cov_subtract.diagonal())
+# 	plt.savefig(ROOT_DIR+'/plots/example_cov_subtract')
+# 	plt.close()
+# 	eigs = scipy.sparse.linalg.eigs(p_hat)
+# 	for k in range(6):
+# 			dummy = eigs[1][:,k]
+# 			m=plot_data(dummy)
+# 			plt.savefig(ROOT_DIR+'/plots/example_evec'+str(k))
+# 			plt.close()
 
-def plot_array_variance_constrained():
-	inverse_mat = InverseInstance.load_from_type(InverseGeo,lat_sep=2,lon_sep=2,l=300,depth_idx=2)
-	argo = Argo.recent_floats(global_cov.degree_bins,global_cov.total_list)
-	argo.df = argo.df[argo.df.latitude<-10]
-	soccom = SOCCOM.recent_floats(global_cov.degree_bins,global_cov.total_list)
+# def plot_array_variance_constrained():
+# 	inverse_mat = InverseInstance.load_from_type(InverseGeo,lat_sep=2,lon_sep=2,l=300,depth_idx=2)
+# 	argo = Argo.recent_floats(global_cov.degree_bins,global_cov.total_list)
+# 	argo.df = argo.df[argo.df.latitude<-10]
+# 	soccom = SOCCOM.recent_floats(global_cov.degree_bins,global_cov.total_list)
 
-	cov = global_cov+submeso_cov
-	hinstance = HInstance.generate_from_float_class([soccom],variable_list=global_cov.variable_list)
-	hinstance = hinstance.T
-	dummy,rows = np.where((hinstance>0).todense())
-	noise = scipy.sparse.diags(cov.diagonal()[rows]*noise_factor)
-	def calculate(cov):
+# 	cov = global_cov+submeso_cov
+# 	hinstance = HInstance.generate_from_float_class([soccom],variable_list=global_cov.variable_list)
+# 	hinstance = hinstance.T
+# 	dummy,rows = np.where((hinstance>0).todense())
+# 	noise = scipy.sparse.diags(cov.diagonal()[rows]*noise_factor)
+# 	def calculate(cov):
 
-		denom = hinstance.dot(cov).dot(hinstance.T)+noise
-		inv_denom = scipy.sparse.linalg.inv(scipy.sparse.csc_matrix(denom.todense()))
-		cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
-		# p_hat = cov-cov_subtract
-		return cov_subtract
+# 		denom = hinstance.dot(cov).dot(hinstance.T)+noise
+# 		inv_denom = scipy.sparse.linalg.inv(scipy.sparse.csc_matrix(denom.todense()))
+# 		cov_subtract = cov.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(cov)
+# 		# p_hat = cov-cov_subtract
+# 		return cov_subtract
 
-	cov_subtract = calculate(cov)
-	p_hat = cov-cov_subtract
-
-
-	phat = np.load('phat.npy')
-	cov = np.load('cov.npy')
-	temp_p,salt_p,ph_p,chl_p,o2_p = np.split(phat,5)
-	temp_cov,salt_cov,ph_cov,chl_cov,o2_cov = np.split(cov,5)
-
-	for p_holder,cov_holder,title in zip([temp_p,salt_p,ph_p,chl_p,o2_p],[temp_cov,salt_cov,ph_cov,chl_cov,o2_cov],['Temperature','Salinity','pH','Chlorophyll','Oxygen']):
-		plottable = inverse_mat.trans_geo.transition_vector_to_plottable((p_holder))
-		fig = plt.figure(figsize=(16,9))
-		ax = fig.add_subplot(1,1,1,projection=ccrs.PlateCarree())
-		XX,YY,ax = inverse_mat.trans_geo.plot_setup(ax=ax)
-		ax.pcolor(XX,YY,plottable,vmax=1,vmin=0)
-		PCM = ax.get_children()[0]
-		fig.colorbar(PCM,label='Formal Mapping Error')
-		ax.set_title(title)
-		plt.show()
+# 	cov_subtract = calculate(cov)
+# 	p_hat = cov-cov_subtract
 
 
-	lat_grid, lon_grid = cov.bins_generator(global_cov.degree_bins)
-	zipper = zip(np.split(p_hat.diagonal()/cov.diagonal(),4),global_cov.variable_list)
-	var1_dict = {'salt':'Salinity','temp': 'Temperature','dic': 'DIC', 
-	'o2': 'Oxygen'}
-	var2_dict = {'salt':'Salinity','dic':'DIC','temp':'Temperature','o2':'Oxygen'}
-
-	for c,var in zipper:
-			plottable = transition_vector_to_plottable(lat_grid,lon_grid,global_cov.total_list,c)
-			plottable_mean = c[c!=0].mean()
-			plottable_std = c[c!=0].std()
-			XX,YY,m = basemap_setup(lat_grid,lon_grid,'Polar')
-			m.pcolormesh(XX,YY,plottable*100,vmax=100,vmin=0)
-			plt.colorbar(label='Unconstrained '+var1_dict[var]+' Variance (%)')
-			# m = argo.scatter_plot(m=m)
-			m = soccom.scatter_plot(m=m)
-			plt.savefig(var+'_for_matt_no_argo')
-			# m = argo.scatter_plot(m=m)
-			# m = soccom.scatter_plot(m=m)
-			plt.close()
+# 	phat = np.load('phat.npy')
+# 	cov = np.load('cov.npy')
+# 	temp_p,salt_p,ph_p,chl_p,o2_p = np.split(phat,5)
+# 	temp_cov,salt_cov,ph_cov,chl_cov,o2_cov = np.split(cov,5)
 
 
-def targeted_array_plots():
-	from transition_matrix.makeplots.argo_data import Float
-	import pandas as pd
-	unconstrained_list = []
-	plot_num = 0
-	base = ROOT_DIR+'/plots/targeted_array/'
-	invinstancelarge = InverseInstance.load_from_type(2,2,1500,traj_type='global_covariance')
-	invinstancesmall = InverseInstance.load_from_type(2,2,300,traj_type='submeso_covariance')
+
+# 	for p_holder,cov_holder,title in zip([temp_p,salt_p,ph_p,chl_p,o2_p],[temp_cov,salt_cov,ph_cov,chl_cov,o2_cov],['Temperature','Salinity','pH','Chlorophyll','Oxygen']):
+# 		plottable = inverse_mat.trans_geo.transition_vector_to_plottable((p_holder))
+# 		fig = plt.figure(figsize=(16,9))
+# 		ax = fig.add_subplot(1,1,1,projection=ccrs.PlateCarree())
+# 		XX,YY,ax = inverse_mat.trans_geo.plot_setup(ax=ax)
+# 		ax.pcolor(XX,YY,plottable,vmax=1,vmin=0)
+# 		PCM = ax.get_children()[0]
+# 		fig.colorbar(PCM,label='Formal Mapping Error')
+# 		ax.set_title(title)
+# 		plt.show()
 
 
-	(bins_lat,bins_lon)=BaseMat.bins_generator(invinstancelarge.degree_bins)
-	covinstance = invinstancelarge.get_cov('dic','dic')+invinstancesmall.get_cov('dic','dic')
-	covinstance.variable_list = ['dic']
-	covinstance.total_list = invinstancelarge.get_cov('dic','dic').total_list
-	covinstance.var1 = invinstancelarge.get_cov('dic','dic').var1
-	covinstance.var2 = invinstancelarge.get_cov('dic','dic').var2
+# 	lat_grid, lon_grid = cov.bins_generator(global_cov.degree_bins)
+# 	zipper = zip(np.split(p_hat.diagonal()/cov.diagonal(),4),global_cov.variable_list)
+# 	var1_dict = {'salt':'Salinity','temp': 'Temperature','dic': 'DIC', 
+# 	'o2': 'Oxygen'}
+# 	var2_dict = {'salt':'Salinity','dic':'DIC','temp':'Temperature','o2':'Oxygen'}
 
-	float_array = Float(np.zeros([len(covinstance.total_list),1]),shape=np.zeros([len(covinstance.total_list),1]).shape,degree_bins=covinstance.degree_bins,total_list=covinstance.total_list)
-	float_array.df = pd.DataFrame({'latitude':[],'longitude':[]})
-	float_array.variables = ['dic']
-	while float_array.sum()<1001:
-		# if float_array.sum()==700:
-		# 	covinstance = invinstance.get_cov('dic','dic')
-		# 	covinstance.variable_list = ['dic']
-		hinstance = HInstance.generate_from_float_class([float_array],variable_list=[covinstance.var1])
-		def calculate_phat(hinstance,covinstance):
-			output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
-			noise = scipy.sparse.diags([covinstance.diagonal().mean()*noise_factor]*hinstance.shape[0])
-			denom = hinstance.dot(covinstance).dot(hinstance.T)+noise
-			denom = scipy.sparse.csc.csc_matrix(denom)
-			if not denom.data.tolist():
-				return covinstance
-			inv_denom = scipy.sparse.linalg.inv(denom)
-			if not type(inv_denom)==scipy.sparse.csc.csc_matrix:
-				inv_denom = scipy.sparse.csc.csc_matrix(inv_denom)
-			cov_subtract = covinstance.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(covinstance)
-			p_hat = covinstance-cov_subtract		
-			return p_hat
-
-		def get_index_of_first_eigen_vector(p_hat):
-			eigs = scipy.sparse.linalg.eigs(p_hat)
-			e_vec = eigs[1][:,0]
-			print(e_vec.max())
-			print(np.where(e_vec == e_vec.max()))
-			idx = np.where(e_vec == e_vec.max())[0][0]
-			return idx,e_vec
+# 	for c,var in zipper:
+# 			plottable = transition_vector_to_plottable(lat_grid,lon_grid,global_cov.total_list,c)
+# 			plottable_mean = c[c!=0].mean()
+# 			plottable_std = c[c!=0].std()
+# 			XX,YY,m = basemap_setup(lat_grid,lon_grid,'Polar')
+# 			m.pcolormesh(XX,YY,plottable*100,vmax=100,vmin=0)
+# 			plt.colorbar(label='Unconstrained '+var1_dict[var]+' Variance (%)')
+# 			# m = argo.scatter_plot(m=m)
+# 			m = soccom.scatter_plot(m=m)
+# 			plt.savefig(var+'_for_matt_no_argo')
+# 			# m = argo.scatter_plot(m=m)
+# 			# m = soccom.scatter_plot(m=m)
+# 			plt.close()
 
 
-		p_hat = calculate_phat(hinstance,covinstance)
-		unconstrained_list.append(p_hat.diagonal().sum())
-		if float_array.sum()%10 == 0:
-
-			plt.subplot(2,1,1)
-			XX,YY,m = basemap_setup(bins_lat,bins_lon,'Argo')  
-			plottable = transition_vector_to_plottable(bins_lat,bins_lon,covinstance.total_list,p_hat.diagonal().ravel())
-			m.pcolormesh(XX,YY,plottable) 
-			plt.colorbar(label = unit_dict[covinstance.variable_list[0]])
-			float_array.scatter_plot(m)
-			plt.subplot(2,1,2)
-			XX,YY,m = basemap_setup(bins_lat,bins_lon,'Argo')  
-			plottable = transition_vector_to_plottable(bins_lat,bins_lon,covinstance.total_list,p_hat.diagonal()/covinstance.diagonal())
-			m.pcolormesh(XX,YY,100-plottable*100,vmin=0,vmax=100) 
-			plt.colorbar(label = '% constrained')
-			float_array.scatter_plot(m)
-			plt.savefig(base+str(plot_num))
-			plt.close()	
-			plot_num += 1
-
-		idx, e_vec = get_index_of_first_eigen_vector(p_hat)
-		if float_array[idx].data.tolist():
-			float_array[idx] = float_array[idx].data[0]+1
-		else:
-			float_array[idx] = 1
-
-	random_error_list = []
-	random_std_list = []
-	num_list = np.arange(900,1500,10)
-	for num in num_list:
-		print(num)
-		dummy_list = []
-		for k in range(10):
-			print(k)
-			hinstance = HInstance.randomly_generate(num,total_list=invinstancelarge.total_list,variable_list=[covinstance.var1],degree_bins=invinstance.degree_bins)
-			p_hat = calculate_phat(hinstance,covinstance)
-			dummy_list.append(p_hat.diagonal().sum())
-			print(dummy_list)
-		random_error_list.append(np.mean(dummy_list))
-		random_std_list.append(np.std(dummy_list))
-	random_y1 = np.array(random_error_list)-np.array(random_std_list)
-	random_y2 = np.array(random_error_list)+np.array(random_std_list)
-	fig = plt.figure()
-	ax = fig.add_subplot(1, 1, 1)
-	ax.fill_between(num_list, random_y1,random_y2,color='g',alpha=0.2)
-	ax.plot(num_list,random_error_list,color='g',label='Random')
-	ax.plot(range(len(unconstrained_list)),unconstrained_list,color='k',label='Targeted')
-	ax.plot(num_list,[unconstrained_list[-1]]*len(num_list),linestyle='--',color='k')
-	plt.ylabel('Unobserved Scaled Variance $mol\ m^{-2}$')
-	plt.xlabel('Float Deployed')
-	plt.xlim([900,1500])
-	plt.ylim([random_y1[-1],random_y2[0]])
-	plt.legend()
-	plt.savefig(base+'random_variance_constrained')
-	plt.close()
+# def targeted_array_plots():
+# 	from transition_matrix.makeplots.argo_data import Float
+# 	import pandas as pd
+# 	unconstrained_list = []
+# 	plot_num = 0
+# 	base = ROOT_DIR+'/plots/targeted_array/'
+# 	invinstancelarge = InverseInstance.load_from_type(2,2,1500,traj_type='global_covariance')
+# 	invinstancesmall = InverseInstance.load_from_type(2,2,300,traj_type='submeso_covariance')
 
 
-	SNR_list = [10000,5000,1000,500,100,50,10,5,1,0.5,0.1,0.05,0.01]
-	mean_targeted_list = []
-	std_targeted_list = []
-	mean_random_list = []
-	std_random_list = []
-	scaling = cov_array.calculate_scaling(2,2)
-	scaling = scipy.sparse.csc_matrix(scaling)
-	targeted_h_instance = HInstance.generate_from_float_class(float_array,variable_list=[covinstance.var1])
-	for SNR in SNR_list:
-		print(SNR)
-		dummy_random_list = []
-		dummy_targeted_list = []
-		for _ in range(10):
-			print(_)
-			covinstance = invinstance.get_cov('dic','dic')
-			covinstance.data = covinstance.data+scaling.data*np.random.normal(scale=1/np.sqrt(SNR)*np.std(covinstance.data),size=len(scaling.data))
-			random_h_instance = HInstance.randomly_generate(1000,total_list=invinstance.total_list,variable_list=[covinstance.var1],degree_bins=invinstance.degree_bins)
-			p_hat = calculate_phat(random_h_instance,covinstance)
-			p_hat.data[p_hat.data<=0]=0.01
+# 	(bins_lat,bins_lon)=BaseMat.bins_generator(invinstancelarge.degree_bins)
+# 	covinstance = invinstancelarge.get_cov('dic','dic')+invinstancesmall.get_cov('dic','dic')
+# 	covinstance.variable_list = ['dic']
+# 	covinstance.total_list = invinstancelarge.get_cov('dic','dic').total_list
+# 	covinstance.var1 = invinstancelarge.get_cov('dic','dic').var1
+# 	covinstance.var2 = invinstancelarge.get_cov('dic','dic').var2
 
-			dummy_random_list.append(p_hat.diagonal().sum())
-			print(dummy_random_list[-1])
-			p_hat = calculate_phat(targeted_h_instance,covinstance)
-			p_hat.data[p_hat.data<=0]=0.01
-			dummy_targeted_list.append(p_hat.diagonal().sum())
-			print(dummy_targeted_list[-1])
+# 	float_array = Float(np.zeros([len(covinstance.total_list),1]),shape=np.zeros([len(covinstance.total_list),1]).shape,degree_bins=covinstance.degree_bins,total_list=covinstance.total_list)
+# 	float_array.df = pd.DataFrame({'latitude':[],'longitude':[]})
+# 	float_array.variables = ['dic']
+# 	while float_array.sum()<1001:
+# 		# if float_array.sum()==700:
+# 		# 	covinstance = invinstance.get_cov('dic','dic')
+# 		# 	covinstance.variable_list = ['dic']
+# 		hinstance = HInstance.generate_from_float_class([float_array],variable_list=[covinstance.var1])
+# 		def calculate_phat(hinstance,covinstance):
+# 			output_mask = np.array(hinstance.sum(axis=0)>0).ravel()
+# 			noise = scipy.sparse.diags([covinstance.diagonal().mean()*noise_factor]*hinstance.shape[0])
+# 			denom = hinstance.dot(covinstance).dot(hinstance.T)+noise
+# 			denom = scipy.sparse.csc.csc_matrix(denom)
+# 			if not denom.data.tolist():
+# 				return covinstance
+# 			inv_denom = scipy.sparse.linalg.inv(denom)
+# 			if not type(inv_denom)==scipy.sparse.csc.csc_matrix:
+# 				inv_denom = scipy.sparse.csc.csc_matrix(inv_denom)
+# 			cov_subtract = covinstance.dot(hinstance.T).dot(inv_denom).dot(hinstance).dot(covinstance)
+# 			p_hat = covinstance-cov_subtract		
+# 			return p_hat
 
-		mean_targeted_list.append(np.mean(dummy_targeted_list))
-		std_targeted_list.append(np.std(dummy_targeted_list))
-		mean_random_list.append(np.mean(dummy_random_list))
-		std_random_list.append(np.std(dummy_random_list))
+# 		def get_index_of_first_eigen_vector(p_hat):
+# 			eigs = scipy.sparse.linalg.eigs(p_hat)
+# 			e_vec = eigs[1][:,0]
+# 			print(e_vec.max())
+# 			print(np.where(e_vec == e_vec.max()))
+# 			idx = np.where(e_vec == e_vec.max())[0][0]
+# 			return idx,e_vec
 
-	plot_num = 12
 
-	target_y_1 = np.array(mean_targeted_list[:plot_num])+np.array(std_targeted_list[:plot_num])
-	target_y_2 = np.array(mean_targeted_list[:plot_num])-np.array(std_targeted_list[:plot_num])
-	random_y_1 = np.array(mean_random_list[:plot_num])+np.array(std_random_list[:plot_num])
-	random_y_2 = np.array(mean_random_list[:plot_num])-np.array(std_random_list[:plot_num])
+# 		p_hat = calculate_phat(hinstance,covinstance)
+# 		unconstrained_list.append(p_hat.diagonal().sum())
+# 		if float_array.sum()%10 == 0:
 
-	fig = plt.figure()
-	ax = fig.add_subplot(1, 1, 1)
-	ax.fill_between(SNR_list[:plot_num], random_y_2,random_y_1,color='g',alpha=0.2)
-	ax.plot(SNR_list[:plot_num],mean_random_list[:plot_num],color='g',label='Random')
-	ax.fill_between(SNR_list[:plot_num], target_y_2,target_y_1,color='k',alpha=0.2)
-	ax.plot(SNR_list[:plot_num],mean_targeted_list[:plot_num],color='k',label='Targeted')
-	plt.ylim([min(target_y_2)-200,max(random_y_1)])
-	plt.xlim([min(SNR_list[:plot_num]),max(SNR_list[:plot_num])])
+# 			plt.subplot(2,1,1)
+# 			XX,YY,m = basemap_setup(bins_lat,bins_lon,'Argo')  
+# 			plottable = transition_vector_to_plottable(bins_lat,bins_lon,covinstance.total_list,p_hat.diagonal().ravel())
+# 			m.pcolormesh(XX,YY,plottable) 
+# 			plt.colorbar(label = unit_dict[covinstance.variable_list[0]])
+# 			float_array.scatter_plot(m)
+# 			plt.subplot(2,1,2)
+# 			XX,YY,m = basemap_setup(bins_lat,bins_lon,'Argo')  
+# 			plottable = transition_vector_to_plottable(bins_lat,bins_lon,covinstance.total_list,p_hat.diagonal()/covinstance.diagonal())
+# 			m.pcolormesh(XX,YY,100-plottable*100,vmin=0,vmax=100) 
+# 			plt.colorbar(label = '% constrained')
+# 			float_array.scatter_plot(m)
+# 			plt.savefig(base+str(plot_num))
+# 			plt.close()	
+# 			plot_num += 1
 
-	ax.set_xscale('log')
-	ax.set_yscale('log')
-	plt.ylabel('Unobserved Scaled Variance $(mol\ m^{-2})$')
-	plt.xlabel('SNR')
-	plt.legend()
-	plt.savefig(base+'SNR_plot')
-	plt.close()				
+# 		idx, e_vec = get_index_of_first_eigen_vector(p_hat)
+# 		if float_array[idx].data.tolist():
+# 			float_array[idx] = float_array[idx].data[0]+1
+# 		else:
+# 			float_array[idx] = 1
 
-def argo_evolution_plot():
-	base = ROOT_DIR+'/plots/argo_evolution/'        
-	for k,days in enumerate([10,20,30,40,50,60,70,80,90,100,120,140,160,180]):
-			transmat = TransMat.load_from_type(1,1,days)
-			argo = Argo.recent_floats(transmat.degree_bins,transmat.total_list)
-			argo_holder = Argo(transmat.todense().dot(argo.todense()),degree_bins=transmat.degree_bins,total_list=transmat.total_list)
-			argo_holder.data = argo_holder.data*100 
-			argo_holder.grid_plot()
-			plt.colorbar(label='Probability (%)')
-			plt.title('Day '+str(days))
-			plt.savefig(base+str(k))
-			plt.close()
+# 	random_error_list = []
+# 	random_std_list = []
+# 	num_list = np.arange(900,1500,10)
+# 	for num in num_list:
+# 		print(num)
+# 		dummy_list = []
+# 		for k in range(10):
+# 			print(k)
+# 			hinstance = HInstance.randomly_generate(num,total_list=invinstancelarge.total_list,variable_list=[covinstance.var1],degree_bins=invinstance.degree_bins)
+# 			p_hat = calculate_phat(hinstance,covinstance)
+# 			dummy_list.append(p_hat.diagonal().sum())
+# 			print(dummy_list)
+# 		random_error_list.append(np.mean(dummy_list))
+# 		random_std_list.append(np.std(dummy_list))
+# 	random_y1 = np.array(random_error_list)-np.array(random_std_list)
+# 	random_y2 = np.array(random_error_list)+np.array(random_std_list)
+# 	fig = plt.figure()
+# 	ax = fig.add_subplot(1, 1, 1)
+# 	ax.fill_between(num_list, random_y1,random_y2,color='g',alpha=0.2)
+# 	ax.plot(num_list,random_error_list,color='g',label='Random')
+# 	ax.plot(range(len(unconstrained_list)),unconstrained_list,color='k',label='Targeted')
+# 	ax.plot(num_list,[unconstrained_list[-1]]*len(num_list),linestyle='--',color='k')
+# 	plt.ylabel('Unobserved Scaled Variance $mol\ m^{-2}$')
+# 	plt.xlabel('Float Deployed')
+# 	plt.xlim([900,1500])
+# 	plt.ylim([random_y1[-1],random_y2[0]])
+# 	plt.legend()
+# 	plt.savefig(base+'random_variance_constrained')
+# 	plt.close()
 
-def goship_line_plot(depth_level=0):
-	for depth_level in np.arange(0,21,2).tolist():
-			def calculate_and_save_p_hat(depth_level,cov):
-				argo = Argo.recent_floats(cov.degree_bins,cov.total_list,age=False)
-				soccom = SOCCOM.recent_floats(cov.degree_bins,cov.total_list,age=False)
-				hinstance = HInstance.generate_from_float_class([argo,soccom],variable_list=cov.variable_list)
-				hinstance = hinstance.T
-				noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
-				denom = hinstance.dot(cov).dot(hinstance.T)+noise
-				denom = scipy.sparse.csc_matrix(denom)
-				inv_denom = scipy.sparse.linalg.inv(denom)
 
-				cov_subtract = scipy.sparse.csc_matrix(cov).dot(hinstance.T.dot(inv_denom).dot(hinstance)).dot(scipy.sparse.csc_matrix(cov))
-				cov_subtract_holder = InverseInstance(cov_subtract,shape=cov_subtract.shape,total_list=global_cov.total_list,
-					lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
-					,l='p_hat',variable_list=global_cov.variable_list,
-					traj_file_type='cm4_submeso_covariance_'+str(depth_level))
-				p_hat = scipy.sparse.csc_matrix(cov)-scipy.sparse.csc_matrix(cov_subtract)
-				holder = InverseInstance(p_hat,shape=p_hat.shape,total_list=global_cov.total_list,
-					lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
-					,l='p_hat',variable_list=global_cov.variable_list,
-					traj_file_type='cm4_submeso_covariance_'+str(depth_level))
-				holder.save()
-				return holder
-			global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
-			submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
-			cov = global_cov+submeso_cov
-			# try: 
-			# 	p_hat = InverseInstance.load_from_type(lat_spacing=2,lon_spacing=2,l='p_hat',traj_type='cm4_submeso_covariance_'+str(depth_level))
-			# except FileNotFoundError:
-			p_hat = calculate_and_save_p_hat(depth_level,cov)
-			cov_subtract = cov - p_hat
+# 	SNR_list = [10000,5000,1000,500,100,50,10,5,1,0.5,0.1,0.05,0.01]
+# 	mean_targeted_list = []
+# 	std_targeted_list = []
+# 	mean_random_list = []
+# 	std_random_list = []
+# 	scaling = cov_array.calculate_scaling(2,2)
+# 	scaling = scipy.sparse.csc_matrix(scaling)
+# 	targeted_h_instance = HInstance.generate_from_float_class(float_array,variable_list=[covinstance.var1])
+# 	for SNR in SNR_list:
+# 		print(SNR)
+# 		dummy_random_list = []
+# 		dummy_targeted_list = []
+# 		for _ in range(10):
+# 			print(_)
+# 			covinstance = invinstance.get_cov('dic','dic')
+# 			covinstance.data = covinstance.data+scaling.data*np.random.normal(scale=1/np.sqrt(SNR)*np.std(covinstance.data),size=len(scaling.data))
+# 			random_h_instance = HInstance.randomly_generate(1000,total_list=invinstance.total_list,variable_list=[covinstance.var1],degree_bins=invinstance.degree_bins)
+# 			p_hat = calculate_phat(random_h_instance,covinstance)
+# 			p_hat.data[p_hat.data<=0]=0.01
 
-	def return_goship_locs():
-		import pandas as pd
-		import re
-		base_goship_folder = ROOT_DIR+'/data/goship_lines/'
-		df_list = []
-		df = pd.read_csv(base_goship_folder+'p04_hy1.csv',skiprows=3,usecols=[1,10,11],names=['Cruise','Lats','Lons'])
-		df = df.dropna().drop_duplicates()
-		df_list.append(df)
-		df = pd.read_csv(base_goship_folder+'33AT20120324_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-		df = df.dropna().drop_duplicates()
-		df_list.append(df)
-		df = pd.read_csv(base_goship_folder+'33AT20120419_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-		df = df.dropna().drop_duplicates()
-		df_list.append(df)
-		df = pd.read_csv(base_goship_folder+'49NZ20140717_hy1.csv',skiprows=7,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
-		df = df.dropna().drop_duplicates()
-		df_list.append(df)
-		holder = []
-		for file in os.listdir(base_goship_folder+'ar07_74JC20140606_ct1'):
-				open_file = open(base_goship_folder+'ar07_74JC20140606_ct1/'+file,'r')
-				lat_lon = []
-				for line in open_file.readlines()[10:12]:
-						lat_lon.append(re.findall(r'[-+]?\d+.\d+', line)[0])
-				holder.append(tuple(lat_lon))
-		lats,lons = zip(*holder)
-		df = pd.DataFrame({'Cruise':['AR07']*len(lats),'Lats':lats,'Lons':lons})
-		df = df.dropna().drop_duplicates()
-		df_list.append(df)
-		return df_list
-	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
-	zipper = zip(np.split(cov_subtract.diagonal(),len(cov.variable_list)),np.split(cov.diagonal(),len(cov.variable_list)),cov.variable_list)
+# 			dummy_random_list.append(p_hat.diagonal().sum())
+# 			print(dummy_random_list[-1])
+# 			p_hat = calculate_phat(targeted_h_instance,covinstance)
+# 			p_hat.data[p_hat.data<=0]=0.01
+# 			dummy_targeted_list.append(p_hat.diagonal().sum())
+# 			print(dummy_targeted_list[-1])
 
-	# var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
-	# 'o2': 'Oxygen ($mol\ m^{-2}$)'}
-	var1_dict = {'so':'Salinity (psu)','thetao': 'Temperature (C)','ph':'','dic':'DIC ($mol\ m^{-2}$)', 
-	'o2': 'Oxygen ($mol\ m^{-2}$)','chl': 'Chlorophyll ($mg\ m^{-3}$)'}
-	data_dict = {}
-	df_list = return_goship_locs()
-	base = ROOT_DIR+'/output/'
+# 		mean_targeted_list.append(np.mean(dummy_targeted_list))
+# 		std_targeted_list.append(np.std(dummy_targeted_list))
+# 		mean_random_list.append(np.mean(dummy_random_list))
+# 		std_random_list.append(np.std(dummy_random_list))
 
-	for c,cs,var in list(zipper):
-		print(var)
-		plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
-		f = interp2d(lon_grid,lat_grid,plottable)
-		XX,YY,ax,fig = cartopy_setup(lat_grid,lon_grid,'')
-		im = ax.pcolor(XX,YY,plottable,vmin=0,alpha=0.6)
-		fig.colorbar(im,label=var1_dict[var]+' % Constrained Variance')
-		for df in df_list:
+# 	plot_num = 12
+
+# 	target_y_1 = np.array(mean_targeted_list[:plot_num])+np.array(std_targeted_list[:plot_num])
+# 	target_y_2 = np.array(mean_targeted_list[:plot_num])-np.array(std_targeted_list[:plot_num])
+# 	random_y_1 = np.array(mean_random_list[:plot_num])+np.array(std_random_list[:plot_num])
+# 	random_y_2 = np.array(mean_random_list[:plot_num])-np.array(std_random_list[:plot_num])
+
+# 	fig = plt.figure()
+# 	ax = fig.add_subplot(1, 1, 1)
+# 	ax.fill_between(SNR_list[:plot_num], random_y_2,random_y_1,color='g',alpha=0.2)
+# 	ax.plot(SNR_list[:plot_num],mean_random_list[:plot_num],color='g',label='Random')
+# 	ax.fill_between(SNR_list[:plot_num], target_y_2,target_y_1,color='k',alpha=0.2)
+# 	ax.plot(SNR_list[:plot_num],mean_targeted_list[:plot_num],color='k',label='Targeted')
+# 	plt.ylim([min(target_y_2)-200,max(random_y_1)])
+# 	plt.xlim([min(SNR_list[:plot_num]),max(SNR_list[:plot_num])])
+
+# 	ax.set_xscale('log')
+# 	ax.set_yscale('log')
+# 	plt.ylabel('Unobserved Scaled Variance $(mol\ m^{-2})$')
+# 	plt.xlabel('SNR')
+# 	plt.legend()
+# 	plt.savefig(base+'SNR_plot')
+# 	plt.close()				
+
+# def argo_evolution_plot():
+# 	base = ROOT_DIR+'/plots/argo_evolution/'        
+# 	for k,days in enumerate([10,20,30,40,50,60,70,80,90,100,120,140,160,180]):
+# 			transmat = TransMat.load_from_type(1,1,days)
+# 			argo = Argo.recent_floats(transmat.degree_bins,transmat.total_list)
+# 			argo_holder = Argo(transmat.todense().dot(argo.todense()),degree_bins=transmat.degree_bins,total_list=transmat.total_list)
+# 			argo_holder.data = argo_holder.data*100 
+# 			argo_holder.grid_plot()
+# 			plt.colorbar(label='Probability (%)')
+# 			plt.title('Day '+str(days))
+# 			plt.savefig(base+str(k))
+# 			plt.close()
+
+# def goship_line_plot(depth_level=0):
+# 	for depth_level in np.arange(0,21,2).tolist():
+# 			def calculate_and_save_p_hat(depth_level,cov):
+# 				argo = Argo.recent_floats(cov.degree_bins,cov.total_list,age=False)
+# 				soccom = SOCCOM.recent_floats(cov.degree_bins,cov.total_list,age=False)
+# 				hinstance = HInstance.generate_from_float_class([argo,soccom],variable_list=cov.variable_list)
+# 				hinstance = hinstance.T
+# 				noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
+# 				denom = hinstance.dot(cov).dot(hinstance.T)+noise
+# 				denom = scipy.sparse.csc_matrix(denom)
+# 				inv_denom = scipy.sparse.linalg.inv(denom)
+
+# 				cov_subtract = scipy.sparse.csc_matrix(cov).dot(hinstance.T.dot(inv_denom).dot(hinstance)).dot(scipy.sparse.csc_matrix(cov))
+# 				cov_subtract_holder = InverseInstance(cov_subtract,shape=cov_subtract.shape,total_list=global_cov.total_list,
+# 					lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
+# 					,l='p_hat',variable_list=global_cov.variable_list,
+# 					traj_file_type='cm4_submeso_covariance_'+str(depth_level))
+# 				p_hat = scipy.sparse.csc_matrix(cov)-scipy.sparse.csc_matrix(cov_subtract)
+# 				holder = InverseInstance(p_hat,shape=p_hat.shape,total_list=global_cov.total_list,
+# 					lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
+# 					,l='p_hat',variable_list=global_cov.variable_list,
+# 					traj_file_type='cm4_submeso_covariance_'+str(depth_level))
+# 				holder.save()
+# 				return holder
+# 			global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
+# 			submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
+# 			cov = global_cov+submeso_cov
+# 			# try: 
+# 			# 	p_hat = InverseInstance.load_from_type(lat_spacing=2,lon_spacing=2,l='p_hat',traj_type='cm4_submeso_covariance_'+str(depth_level))
+# 			# except FileNotFoundError:
+# 			p_hat = calculate_and_save_p_hat(depth_level,cov)
+# 			cov_subtract = cov - p_hat
+
+# 	def return_goship_locs():
+# 		import pandas as pd
+# 		import re
+# 		base_goship_folder = ROOT_DIR+'/data/goship_lines/'
+# 		df_list = []
+# 		df = pd.read_csv(base_goship_folder+'p04_hy1.csv',skiprows=3,usecols=[1,10,11],names=['Cruise','Lats','Lons'])
+# 		df = df.dropna().drop_duplicates()
+# 		df_list.append(df)
+# 		df = pd.read_csv(base_goship_folder+'33AT20120324_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+# 		df = df.dropna().drop_duplicates()
+# 		df_list.append(df)
+# 		df = pd.read_csv(base_goship_folder+'33AT20120419_hy1.csv',skiprows=52,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+# 		df = df.dropna().drop_duplicates()
+# 		df_list.append(df)
+# 		df = pd.read_csv(base_goship_folder+'49NZ20140717_hy1.csv',skiprows=7,usecols=[1,9,10],names=['Cruise','Lats','Lons'])
+# 		df = df.dropna().drop_duplicates()
+# 		df_list.append(df)
+# 		holder = []
+# 		for file in os.listdir(base_goship_folder+'ar07_74JC20140606_ct1'):
+# 				open_file = open(base_goship_folder+'ar07_74JC20140606_ct1/'+file,'r')
+# 				lat_lon = []
+# 				for line in open_file.readlines()[10:12]:
+# 						lat_lon.append(re.findall(r'[-+]?\d+.\d+', line)[0])
+# 				holder.append(tuple(lat_lon))
+# 		lats,lons = zip(*holder)
+# 		df = pd.DataFrame({'Cruise':['AR07']*len(lats),'Lats':lats,'Lons':lons})
+# 		df = df.dropna().drop_duplicates()
+# 		df_list.append(df)
+# 		return df_list
+# 	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
+# 	zipper = zip(np.split(cov_subtract.diagonal(),len(cov.variable_list)),np.split(cov.diagonal(),len(cov.variable_list)),cov.variable_list)
+
+# 	# var1_dict = {'salt':'Salinity (psu m)','temp': 'Temperature (C m)','dic': 'DIC ($mol\ m^{-2}$)', 
+# 	# 'o2': 'Oxygen ($mol\ m^{-2}$)'}
+# 	var1_dict = {'so':'Salinity (psu)','thetao': 'Temperature (C)','ph':'','dic':'DIC ($mol\ m^{-2}$)', 
+# 	'o2': 'Oxygen ($mol\ m^{-2}$)','chl': 'Chlorophyll ($mg\ m^{-3}$)'}
+# 	data_dict = {}
+# 	df_list = return_goship_locs()
+# 	base = ROOT_DIR+'/output/'
+
+# 	for c,cs,var in list(zipper):
+# 		print(var)
+# 		plottable = transition_vector_to_plottable(lat_grid,lon_grid,cov.total_list,c/cs*100)
+# 		f = interp2d(lon_grid,lat_grid,plottable)
+# 		XX,YY,ax,fig = cartopy_setup(lat_grid,lon_grid,'')
+# 		im = ax.pcolor(XX,YY,plottable,vmin=0,alpha=0.6)
+# 		fig.colorbar(im,label=var1_dict[var]+' % Constrained Variance')
+# 		for df in df_list:
 
 				
-				lats = df['Lats'].tolist()
-				lats = [float(x) for x in lats]
-				lons = df['Lons'].tolist()
-				lons = [float(x) for x in lons]
-				interp_list = [f(coord[0],coord[1])[0] for coord in zip(lons,lats)]
-				cruise = df.Cruise.tolist()[0]
-				cruise = cruise.replace(' ','')
-				print(cruise)
-				try:
-						data_dict[cruise][var] = interp_list
-						data_dict[cruise]['lon'] = lons
-						data_dict[cruise]['lat'] = lats
-				except KeyError:
-						data_dict[cruise] = {}
-						data_dict[cruise][var] = interp_list      
-						data_dict[cruise]['lon'] = lons
-						data_dict[cruise]['lat'] = lats                      
-				ax.scatter(lons,lats,zorder=15)
+# 				lats = df['Lats'].tolist()
+# 				lats = [float(x) for x in lats]
+# 				lons = df['Lons'].tolist()
+# 				lons = [float(x) for x in lons]
+# 				interp_list = [f(coord[0],coord[1])[0] for coord in zip(lons,lats)]
+# 				cruise = df.Cruise.tolist()[0]
+# 				cruise = cruise.replace(' ','')
+# 				print(cruise)
+# 				try:
+# 						data_dict[cruise][var] = interp_list
+# 						data_dict[cruise]['lon'] = lons
+# 						data_dict[cruise]['lat'] = lats
+# 				except KeyError:
+# 						data_dict[cruise] = {}
+# 						data_dict[cruise][var] = interp_list      
+# 						data_dict[cruise]['lon'] = lons
+# 						data_dict[cruise]['lat'] = lats                      
+# 				ax.scatter(lons,lats,zorder=15)
 
-		# argo.scatter_plot(ax=ax)
-		# soccom.scatter_plot(ax=ax)
-		plt.savefig(base+var+'_all_cruises')
-		plt.close()
+# 		# argo.scatter_plot(ax=ax)
+# 		# soccom.scatter_plot(ax=ax)
+# 		plt.savefig(base+var+'_all_cruises')
+# 		plt.close()
 
-	for cruise in data_dict.keys():
-		print(cruise)
-		temp_dict = data_dict[cruise]
-		for var in temp_dict.keys():
-				if var in ['lat','lon']:
-					continue
-				lat = temp_dict['lat']
-				data = abs(np.array(temp_dict[var]))
-				plt.plot(lat,data,label=var)
-		plt.legend()
-		plt.title(cruise+' Along Track Variance')
-		plt.ylabel('% Constrained Variance')
-		plt.xlabel('Latitude')
-		plt.savefig(base+'lineplot_'+cruise)
-		# plt.show()
-		plt.close()
+# 	for cruise in data_dict.keys():
+# 		print(cruise)
+# 		temp_dict = data_dict[cruise]
+# 		for var in temp_dict.keys():
+# 				if var in ['lat','lon']:
+# 					continue
+# 				lat = temp_dict['lat']
+# 				data = abs(np.array(temp_dict[var]))
+# 				plt.plot(lat,data,label=var)
+# 		plt.legend()
+# 		plt.title(cruise+' Along Track Variance')
+# 		plt.ylabel('% Constrained Variance')
+# 		plt.xlabel('Latitude')
+# 		plt.savefig(base+'lineplot_'+cruise)
+# 		# plt.show()
+# 		plt.close()
 
-def GOM_line_plot():
-	import pandas as pd
-	waypoint_file = file_handler.out+'/../../../../Data/Draft waypoints GOMECC-4.csv'
-	df = pd.read_csv(waypoint_file,skiprows=9)[['Unnamed: 4','Unnamed: 7']]
-	lat = np.array(df['Unnamed: 4'].tolist())
-	lon = -1*np.array(df['Unnamed: 7'].tolist())
-	dummy,dummy,ax,fig = cartopy_setup('','','GOM')
-	ax.plot(lon,lat)
-	region = [-100,-75,17,30.5]
-	lllon,urlon,lllat,urlat = region
-	global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
-	submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
-	cov = global_cov+submeso_cov
-	coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
-	poly = Polygon(coords)
-	total_truth = [Point(x[0],x[1]).within(poly) for x in cov.total_list]
-	idx = np.where(total_truth)[0]
-	total_idx = []
-	for i in range(len(cov.variable_list)):
-		total_idx+=(i*len(cov.total_list)+idx).tolist()
-	cov_holder = cov[total_idx,:]
-	cov_holder = cov_holder[:,total_idx]
-	total_list = np.array(cov.total_list)[total_truth].tolist()
-	cov_holder.total_list = total_list.tolist()
-	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
-
-
+# def GOM_line_plot():
+# 	import pandas as pd
+# 	waypoint_file = file_handler.out+'/../../../../Data/Draft waypoints GOMECC-4.csv'
+# 	df = pd.read_csv(waypoint_file,skiprows=9)[['Unnamed: 4','Unnamed: 7']]
+# 	lat = np.array(df['Unnamed: 4'].tolist())
+# 	lon = -1*np.array(df['Unnamed: 7'].tolist())
+# 	dummy,dummy,ax,fig = cartopy_setup('','','GOM')
+# 	ax.plot(lon,lat)
+# 	region = [-100,-75,17,30.5]
+# 	lllon,urlon,lllat,urlat = region
+# 	global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
+# 	submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
+# 	cov = global_cov+submeso_cov
+# 	coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
+# 	poly = Polygon(coords)
+# 	total_truth = [Point(x[0],x[1]).within(poly) for x in cov.total_list]
+# 	idx = np.where(total_truth)[0]
+# 	total_idx = []
+# 	for i in range(len(cov.variable_list)):
+# 		total_idx+=(i*len(cov.total_list)+idx).tolist()
+# 	cov_holder = cov[total_idx,:]
+# 	cov_holder = cov_holder[:,total_idx]
+# 	total_list = np.array(cov.total_list)[total_truth].tolist()
+# 	cov_holder.total_list = total_list.tolist()
+# 	lat_grid, lon_grid = cov.bins_generator(cov.degree_bins)
 
 
-	def calculate_and_save_p_hat(depth_level,cov):
-		argo = Argo.recent_floats(cov.degree_bins,total_list,age=False)
-		soccom = SOCCOM.recent_floats(cov.degree_bins,total_list,age=False)
-		hinstance = HInstance.generate_from_float_class([argo,soccom],variable_list=cov.variable_list)
-		hinstance = hinstance.T
-		noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
-		denom = hinstance.dot(cov).dot(hinstance.T)+noise
-		denom = scipy.sparse.csc_matrix(denom)
-		inv_denom = scipy.sparse.linalg.inv(denom)
-
-		cov_subtract = scipy.sparse.csc_matrix(cov).dot(hinstance.T.dot(inv_denom).dot(hinstance)).dot(scipy.sparse.csc_matrix(cov))
-		cov_subtract_holder = InverseInstance(cov_subtract,shape=cov_subtract.shape,total_list=global_cov.total_list,
-			lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
-			,l='p_hat',variable_list=global_cov.variable_list,
-			traj_file_type='cm4_submeso_covariance_'+str(depth_level))
-		p_hat = scipy.sparse.csc_matrix(cov)-scipy.sparse.csc_matrix(cov_subtract)
-		holder = InverseInstance(p_hat,shape=p_hat.shape,total_list=global_cov.total_list,
-			lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
-			,l='p_hat',variable_list=global_cov.variable_list,
-			traj_file_type='cm4_submeso_covariance_'+str(depth_level))
-		holder.save()
-		return holder
-
-	try: 
-		p_hat = InverseInstance.load_from_type(lat_spacing=2,lon_spacing=2,l='gom_p_hat',traj_type='cm4_submeso_covariance_'+str(depth_level))
-	except FileNotFoundError:
-		p_hat = calculate_and_save_p_hat(depth_level,cov_holder)
-	cov_subtract = cov - p_hat
 
 
+# 	def calculate_and_save_p_hat(depth_level,cov):
+# 		argo = Argo.recent_floats(cov.degree_bins,total_list,age=False)
+# 		soccom = SOCCOM.recent_floats(cov.degree_bins,total_list,age=False)
+# 		hinstance = HInstance.generate_from_float_class([argo,soccom],variable_list=cov.variable_list)
+# 		hinstance = hinstance.T
+# 		noise = scipy.sparse.diags([cov.diagonal().mean()*noise_factor]*hinstance.shape[0])
+# 		denom = hinstance.dot(cov).dot(hinstance.T)+noise
+# 		denom = scipy.sparse.csc_matrix(denom)
+# 		inv_denom = scipy.sparse.linalg.inv(denom)
+
+# 		cov_subtract = scipy.sparse.csc_matrix(cov).dot(hinstance.T.dot(inv_denom).dot(hinstance)).dot(scipy.sparse.csc_matrix(cov))
+# 		cov_subtract_holder = InverseInstance(cov_subtract,shape=cov_subtract.shape,total_list=global_cov.total_list,
+# 			lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
+# 			,l='p_hat',variable_list=global_cov.variable_list,
+# 			traj_file_type='cm4_submeso_covariance_'+str(depth_level))
+# 		p_hat = scipy.sparse.csc_matrix(cov)-scipy.sparse.csc_matrix(cov_subtract)
+# 		holder = InverseInstance(p_hat,shape=p_hat.shape,total_list=global_cov.total_list,
+# 			lat_spacing=global_cov.degree_bins[0],lon_spacing=global_cov.degree_bins[1]
+# 			,l='p_hat',variable_list=global_cov.variable_list,
+# 			traj_file_type='cm4_submeso_covariance_'+str(depth_level))
+# 		holder.save()
+# 		return holder
+
+# 	try: 
+# 		p_hat = InverseInstance.load_from_type(lat_spacing=2,lon_spacing=2,l='gom_p_hat',traj_type='cm4_submeso_covariance_'+str(depth_level))
+# 	except FileNotFoundError:
+# 		p_hat = calculate_and_save_p_hat(depth_level,cov_holder)
+# 	cov_subtract = cov - p_hat
 
 
 
@@ -759,96 +776,98 @@ def GOM_line_plot():
 
 
 
-def regional_variance():
-	depth_list = np.arange(0,21,2).tolist()
-	num_list = [3,6,12,15,18,21,24,27,30,33]
-	for name, region in [('GOMMEC',[-100,-81.5,20.5,30.5]),('CCS',[-135,-105,20,55])]:
-		lllon,urlon,lllat,urlat = region
-		try:
-			out_list = np.load(file_handler.tmp_file('regional_variance/'+name+'.npy'))
-		except FileNotFoundError:
-			out_list = []
-			for depth_level in depth_list:
-
-				global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
-				submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
-				p_hat = global_cov+submeso_cov
-				coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
-				poly = Polygon(coords)
-				total_truth = [Point(x[0],x[1]).within(poly) for x in p_hat.total_list]
-				idx = np.where(total_truth)[0]
-				total_idx = []
-				for i in range(len(p_hat.variable_list)):
-					total_idx+=(i*len(p_hat.total_list)+idx).tolist()
-
-				p_hat_holder = p_hat[total_idx,:]
-				p_hat_holder = p_hat_holder[:,total_idx]
-				total_list = np.array(p_hat.total_list)[total_truth]
-
-				lat_grid, lon_grid = p_hat.bins_generator(p_hat.degree_bins)
-				zipper = zip(np.split(p_hat_holder.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
-				scale_dict = {}
-				for c,var in list(zipper):
-					print(var)
-					plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
-					plottable[plottable<0]=0
-					scale_dict[var]=plottable.sum()
 
 
-				for num in num_list:
-					for i in range(50):
-						print('this is instance '+str(i)+' of float number '+str(num))
-						hinstance = HInstance.randomly_generate(num,total_list=total_list,variable_list=p_hat.variable_list,degree_bins=p_hat.degree_bins,limit=[lllon,urlon,lllat,urlat])
-						assert hinstance.data.sum()==num*len(p_hat.variable_list)
+# def regional_variance():
+# 	depth_list = np.arange(0,21,2).tolist()
+# 	num_list = [3,6,12,15,18,21,24,27,30,33]
+# 	for name, region in [('GOMMEC',[-100,-81.5,20.5,30.5]),('CCS',[-135,-105,20,55])]:
+# 		lllon,urlon,lllat,urlat = region
+# 		try:
+# 			out_list = np.load(file_handler.tmp_file('regional_variance/'+name+'.npy'))
+# 		except FileNotFoundError:
+# 			out_list = []
+# 			for depth_level in depth_list:
 
-						hinstance = hinstance.T
-						noise = scipy.sparse.diags([p_hat_holder.diagonal().mean()*noise_factor]*hinstance.shape[0])
+# 				global_cov = InverseInstance.load_from_type(2,2,1500,'cm4_global_covariance_'+str(depth_level))
+# 				submeso_cov = InverseInstance.load_from_type(2,2,300,'cm4_submeso_covariance_'+str(depth_level))
+# 				p_hat = global_cov+submeso_cov
+# 				coords = [(lllon,lllat),(lllon,urlat),(urlon,urlat),(urlon,lllat),(lllon,lllat)]
+# 				poly = Polygon(coords)
+# 				total_truth = [Point(x[0],x[1]).within(poly) for x in p_hat.total_list]
+# 				idx = np.where(total_truth)[0]
+# 				total_idx = []
+# 				for i in range(len(p_hat.variable_list)):
+# 					total_idx+=(i*len(p_hat.total_list)+idx).tolist()
 
-						denom = scipy.sparse.linalg.inv(hinstance.dot(p_hat_holder).dot(hinstance.T)+noise)
-						new_p_hat = p_hat_holder-p_hat_holder.dot((hinstance.T).dot(denom).dot(hinstance)).dot(p_hat_holder)
-						zipper = zip(np.split(new_p_hat.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+# 				p_hat_holder = p_hat[total_idx,:]
+# 				p_hat_holder = p_hat_holder[:,total_idx]
+# 				total_list = np.array(p_hat.total_list)[total_truth]
 
-						for c,var in list(zipper):
-							print(var)
-							plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
-							plottable[plottable<0]=0
-							percent_constrained = plottable.sum()
-							out_list.append((percent_constrained/scale_dict[var],var,num,depth_level))
-			np.save(file_handler.tmp_file('regional_variance/'+name),np.array(out_list))
-			out_list = np.load(file_handler.tmp_file('regional_variance/'+name+'.npy'))
-		filepath = ROOT_DIR + '/../../../../data/cm4/thetao/thetao_Omon_GFDL-CM4_historical_r1i1p1f1_gr_185001-186912.nc'
-		ncfid = Dataset(filepath)
+# 				lat_grid, lon_grid = p_hat.bins_generator(p_hat.degree_bins)
+# 				zipper = zip(np.split(p_hat_holder.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+# 				scale_dict = {}
+# 				for c,var in list(zipper):
+# 					print(var)
+# 					plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
+# 					plottable[plottable<0]=0
+# 					scale_dict[var]=plottable.sum()
 
-		val,var,num,depth = zip(*out_list)
-		val = [float(x) for x in val]
-		num = [int(x) for x in num]
-		depth = [int(x) for x in depth]
 
-		translation_dict = {'chl':'Chl','o2':'O2','ph':'Ph','so':'Salinity','thetao':'Temperature'}
-		for var_dummy in np.unique(var):
+# 				for num in num_list:
+# 					for i in range(50):
+# 						print('this is instance '+str(i)+' of float number '+str(num))
+# 						hinstance = HInstance.randomly_generate(num,total_list=total_list,variable_list=p_hat.variable_list,degree_bins=p_hat.degree_bins,limit=[lllon,urlon,lllat,urlat])
+# 						assert hinstance.data.sum()==num*len(p_hat.variable_list)
 
-			depths_num = np.sort(np.unique(np.array(depth)[(np.array(var)==var_dummy)]))
-			std_array = np.zeros([len(depths_num),len(num_list)])
-			mean_array = np.zeros([len(depths_num),len(num_list)])		
-			depths = ncfid['lev'][:][depths_num]
-			XX,YY = np.meshgrid(num_list,depths)
-			for i,depth_dummy in enumerate(depths_num):
-				for k,num_dummy in enumerate(num_list):
-					mask = (np.array(var)==var_dummy)&(np.array(num)==num_dummy)&(np.array(depth)==depth_dummy)
-					val_list = np.array(val)[mask]
-					num_idx = num_list.index(num_dummy)
-					depth_idx = depth_list.index(depth_dummy)
-					std_array[depth_idx,num_idx]=100-val_list.std()*100
-					mean_array[depth_idx,num_idx]=100-val_list.mean()*100
+# 						hinstance = hinstance.T
+# 						noise = scipy.sparse.diags([p_hat_holder.diagonal().mean()*noise_factor]*hinstance.shape[0])
 
-			plt.pcolor(XX,YY,mean_array,vmin=0,vmax=100)
-			plt.colorbar()
-			plt.ylabel('Depth (m)')
-			plt.xlabel('Number of floats deployed')
-			plt.title('Mean Variance Constrained for '+translation_dict[var_dummy])
-			plt.gca().invert_yaxis()
-			plt.savefig(file_handler.out_file(name+'_'+var_dummy+'_mean'))
-			plt.close()
+# 						denom = scipy.sparse.linalg.inv(hinstance.dot(p_hat_holder).dot(hinstance.T)+noise)
+# 						new_p_hat = p_hat_holder-p_hat_holder.dot((hinstance.T).dot(denom).dot(hinstance)).dot(p_hat_holder)
+# 						zipper = zip(np.split(new_p_hat.diagonal(),len(p_hat.variable_list)),p_hat.variable_list)
+
+# 						for c,var in list(zipper):
+# 							print(var)
+# 							plottable = transition_vector_to_plottable(lat_grid,lon_grid,total_list,c)
+# 							plottable[plottable<0]=0
+# 							percent_constrained = plottable.sum()
+# 							out_list.append((percent_constrained/scale_dict[var],var,num,depth_level))
+# 			np.save(file_handler.tmp_file('regional_variance/'+name),np.array(out_list))
+# 			out_list = np.load(file_handler.tmp_file('regional_variance/'+name+'.npy'))
+# 		filepath = ROOT_DIR + '/../../../../data/cm4/thetao/thetao_Omon_GFDL-CM4_historical_r1i1p1f1_gr_185001-186912.nc'
+# 		ncfid = Dataset(filepath)
+
+# 		val,var,num,depth = zip(*out_list)
+# 		val = [float(x) for x in val]
+# 		num = [int(x) for x in num]
+# 		depth = [int(x) for x in depth]
+
+# 		translation_dict = {'chl':'Chl','o2':'O2','ph':'Ph','so':'Salinity','thetao':'Temperature'}
+# 		for var_dummy in np.unique(var):
+
+# 			depths_num = np.sort(np.unique(np.array(depth)[(np.array(var)==var_dummy)]))
+# 			std_array = np.zeros([len(depths_num),len(num_list)])
+# 			mean_array = np.zeros([len(depths_num),len(num_list)])		
+# 			depths = ncfid['lev'][:][depths_num]
+# 			XX,YY = np.meshgrid(num_list,depths)
+# 			for i,depth_dummy in enumerate(depths_num):
+# 				for k,num_dummy in enumerate(num_list):
+# 					mask = (np.array(var)==var_dummy)&(np.array(num)==num_dummy)&(np.array(depth)==depth_dummy)
+# 					val_list = np.array(val)[mask]
+# 					num_idx = num_list.index(num_dummy)
+# 					depth_idx = depth_list.index(depth_dummy)
+# 					std_array[depth_idx,num_idx]=100-val_list.std()*100
+# 					mean_array[depth_idx,num_idx]=100-val_list.mean()*100
+
+# 			plt.pcolor(XX,YY,mean_array,vmin=0,vmax=100)
+# 			plt.colorbar()
+# 			plt.ylabel('Depth (m)')
+# 			plt.xlabel('Number of floats deployed')
+# 			plt.title('Mean Variance Constrained for '+translation_dict[var_dummy])
+# 			plt.gca().invert_yaxis()
+# 			plt.savefig(file_handler.out_file(name+'_'+var_dummy+'_mean'))
+# 			plt.close()
 	# @staticmethod
 	# def gradient_calc(data):
 	# 		dy = 111.7*1000
