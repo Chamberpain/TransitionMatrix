@@ -75,7 +75,9 @@ class Core(Float):
 
 	@classmethod
 	def recent_floats(cls,GeoClass, FloatClass):
-		var_grid = FloatClass.recent_bins(GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+		var_grid = FloatClass.get_recent_bins(GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+		var_date = FloatClass.get_recent_date_list()
+		var_grid = [x for date,x in zip(var_date,var_grid) if date>max(var_date)-datetime.timedelta(days=180)]
 		idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
 		holder_array = np.zeros([len(GeoClass.total_list),1])
 		for idx in idx_list:
@@ -88,11 +90,23 @@ class BGC(Float):
 	marker_size = 20
 
 	@classmethod
-	def recent_floats(cls,GeoClass, FloatClass):
+	def recent_floats(cls,GeoClass, FloatClass, days_delta = 0):
 		out_list = []
+		lat_bins = GeoClass.get_lat_bins()
+		lon_bins = GeoClass.get_lon_bins()
+		deployment_date_list = FloatClass.get_deployment_date_list()
+		recent_date_list = FloatClass.get_recent_date_list()
+		bin_list = FloatClass.get_recent_bins(lat_bins,lon_bins)
+		date_mask =[max(recent_date_list)-datetime.timedelta(days=180)<x for x in recent_date_list]
+		age_list = [(max(recent_date_list)-x).days for x in deployment_date_list]
 		for variable in GeoClass.variable_list:
 			float_var = GeoClass.variable_translation_dict[variable]
-			var_grid = FloatClass.recent_bins_by_sensor(float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
+			sensor_list = FloatClass.get_sensors()
+			sensor_mask = [float_var in x for x in sensor_list]
+			age_mask = [(x+days_delta)<(365*4) for x in age_list]
+			mask = np.array(sensor_mask)&np.array(date_mask)&np.array(age_mask)
+			var_grid = np.array(bin_list)[mask]
+
 			idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
 			holder_array = np.zeros([len(GeoClass.total_list),1])
 			for idx in idx_list:

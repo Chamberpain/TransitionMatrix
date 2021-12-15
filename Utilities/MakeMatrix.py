@@ -2,7 +2,8 @@ from GeneralUtilities.Compute.list import find_nearest,flat_list
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
 from GeneralUtilities.Data.lagrangian.sose.SOSE_read import SOSEReader,aggregate_sose_list
 from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
-from TransitionMatrix.Utilities.Compute.trans_read import TransitionGeo,TransMat,WinterGeo,SummerGeo,GPSGeo,ARGOSGeo,WinterSOSEGeo,SummerSOSEGeo,SOSEGeo, SOSEWithholdingGeo, WithholdingGeo
+from TransitionMatrix.Utilities.TransGeo import TransitionGeo,WinterGeo,SummerGeo,GPSGeo,ARGOSGeo,WinterSOSEGeo,SummerSOSEGeo,SOSEGeo, SOSEWithholdingGeo, WithholdingGeo
+from TransitionMatrix.Utilities.TransMat import TransMat
 
 import numpy as np
 import matplotlib.pyplot as plt
