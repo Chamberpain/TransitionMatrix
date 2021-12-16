@@ -31,3 +31,63 @@ def z_test(self,p_1,p_2,n_1,n_2):
     n_2 = np.ma.array(n_2,mask = (n_2==0))      
     z_stat = (p_1-p_2)/np.sqrt(self.transition_matrix.todense()*(1-self.transition_matrix.todense())*(1/n_1+1/n_2))
     assert (np.abs(z_stat)<1.96).data.all()
+
+
+def matrix_compare(matrix_1,matrix_2):
+    east_west_lr, north_south_lr = matrix_1.return_mean()
+    east_west_lr = matrix_1.trans_geo.transition_vector_to_plottable(east_west_lr)
+    north_south_lr = matrix_1.trans_geo.transition_vector_to_plottable(north_south_lr)
+
+    east_west_hr, north_south_hr = matrix_2.return_mean()
+    east_west_hr = matrix_2.trans_geo.transition_vector_to_plottable(east_west_hr)
+    north_south_hr = matrix_2.trans_geo.transition_vector_to_plottable(north_south_hr)
+
+    ew_std_lr, ns_std_lr = matrix_1.return_std()
+    ew_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ew_std_lr)
+    ns_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ns_std_lr)
+
+    ew_std_hr, ns_std_hr = matrix_2.return_std()
+    ew_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ew_std_hr)
+    ns_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ns_std_hr)
+
+    ew_mean_diff = (east_west_lr-east_west_hr)
+    ns_mean_diff = (north_south_lr-north_south_hr)
+    ew_std_diff = (ew_std_lr-ew_std_hr)
+    ns_std_diff = (ns_std_lr-ns_std_hr)
+    return (ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff)
+
+
+def matrix_compare(matrix_1,matrix_2,description):
+    east_west_lr, north_south_lr = matrix_1.return_mean()
+    east_west_lr = matrix_1.trans_geo.transition_vector_to_plottable(east_west_lr)
+    north_south_lr = matrix_1.trans_geo.transition_vector_to_plottable(north_south_lr)
+
+    east_west_hr, north_south_hr = matrix_2.return_mean()
+    east_west_hr = matrix_2.trans_geo.transition_vector_to_plottable(east_west_hr)
+    north_south_hr = matrix_2.trans_geo.transition_vector_to_plottable(north_south_hr)
+
+    mask = (~north_south_lr.mask)&(~north_south_hr.mask)
+
+    east_west_lr = east_west_lr.data[mask]
+    north_south_lr = north_south_lr.data[mask]
+    east_west_hr = east_west_hr.data[mask]
+    north_south_hr = north_south_hr.data[mask]
+
+    ew_std_lr, ns_std_lr = matrix_1.return_std()
+    ew_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ew_std_lr)
+    ns_std_lr = matrix_1.trans_geo.transition_vector_to_plottable(ns_std_lr)
+
+    ew_std_hr, ns_std_hr = matrix_2.return_std()
+    ew_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ew_std_hr)
+    ns_std_hr = matrix_2.trans_geo.transition_vector_to_plottable(ns_std_hr)
+                    
+    ew_std_lr = ew_std_lr.data[mask]
+    ns_std_lr = ns_std_lr.data[mask]
+    ew_std_hr = ew_std_hr.data[mask]
+    ns_std_hr = ns_std_hr.data[mask]
+
+    ew_mean_diff = abs(east_west_lr-east_west_hr).mean()
+    ns_mean_diff = abs(north_south_lr-north_south_hr).mean()
+    ew_std_diff = abs(ew_std_lr-ew_std_hr).mean()
+    ns_std_diff = abs(ns_std_lr-ns_std_hr).mean()
+    return (ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,matrix_1.trans_geo.lat_sep,matrix_1.trans_geo.lon_sep,matrix_1.trans_geo.time_step,description)
