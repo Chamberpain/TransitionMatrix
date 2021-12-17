@@ -9,7 +9,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import random
 import pandas as pd
-import scipy.spatial as spatial
 import geopy
 import scipy.sparse.linalg
 import copy
@@ -164,7 +163,7 @@ class WinterDict(SeasonalDict):
 	description = 'Winter'
 
 
-def mask_compute(start_bins,end_bins,total_list):
+def mask_compute(start_bins,end_bins,total_list,all_dict):
 
 	def not_enough_numbers(matrix_holder,num=4):
 		print('Checking if there are not enough numbers')
@@ -283,7 +282,7 @@ def base_calc():
 				start_bins,end_bins = zip(*all_dict.bin_dict.keys())
 				total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
 
-				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list,all_dict)
 				# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 				trans_geo.set_total_list([geopy.Point(x) for x in total_list])
 				transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)

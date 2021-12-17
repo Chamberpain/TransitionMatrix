@@ -323,62 +323,6 @@ def resolution_bias_plot():
 plot_style_dict = {'argo':'--','SOSE':':'}
 plot_color_dict = {(1,1):'teal',(1,2):'brown',(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
 
-def temporal_bias_plot():
-	from TransitionMatrix.Utilities.Compute.compute_utils import matrix_size_match    
-	out = []
-	for traj_type in [TransitionGeo,SOSEGeo]:
-		for lat,lon in [(1,1),(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
-			for time, multiplyer in [(30,11),(60,5),(90,3),(120,2)]:
-				print('lat is ',lat,' lon is ',lon)
-				print('time is ',time)
-				holder_low_res = TransMat.load_from_type(GeoClass=traj_type,lat_spacing=lat,lon_spacing=lon,time_step=time)
-				holder_low_res = holder_low_res.multiply(multiplyer)
-				holder_high_res = TransMat.load_from_type(GeoClass=traj_type,lat_spacing=lat,lon_spacing=lon,time_step=180)
-				holder_high_res = holder_high_res.multiply(1)
-				out.append(matrix_compare(holder_low_res,holder_high_res,traj_type.file_type))
-	with open(file_handler.tmp_file('resolution_difference_data'), 'wb') as fp:
-		pickle.dump(out, fp)
-	fp.close()
-
-def resolution_bias_plot():
-	data_list = []
-	for time in [30,60,90,120,150,180]:	
-		high_res = TransMat.load_from_type(lat_spacing=1,lon_spacing=1,time_step=time)
-		hr_ew_scaled,hr_ns_scaled = high_res.return_mean()
-
-		for lat,lon in [(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
-			print('lat = ',lat)
-			print('lon = ',lon)
-			print('time = ',time)
-			low_res = TransMat.load_from_type(lat_spacing=lat,lon_spacing=lon,time_step=time)
-			lr_ew_scaled,lr_ns_scaled = low_res.return_mean()
-			for lr_idx in range(low_res.shape[0]):
-				print('idx = ',lr_idx)
-				point_list = low_res.trans_geo.total_list.reduced_res(lr_idx,1,1)
-				mean_list = []
-				for x in point_list:
-					try:
-						hr_idx = high_res.trans_geo.total_list.index(geopy.Point(x))
-						mean_list.append(geopy.Point(x[0]+hr_ns_scaled[hr_idx],x[1]+hr_ew_scaled[hr_idx]))
-					except ValueError:
-						continue
-				if not mean_list:
-					continue
-				lat_list,lon_list = zip(*[(x.latitude,x.longitude) for x in mean_list])
-				high_res_mean = geopy.Point(np.mean(lat_list),np.mean(lon_list))
-				low_res_lat = low_res.trans_geo.total_list[lr_idx].latitude+lr_ns_scaled[lr_idx]
-				low_res_lon = low_res.trans_geo.total_list[lr_idx].longitude+lr_ew_scaled[lr_idx]
-				low_res_mean = geopy.Point(low_res_lat,low_res_lon)
-				error = geopy.distance.great_circle(high_res_mean,low_res_mean).km
-				data_list.append((error,lat,lon,time))
-	with open(file_handler.tmp_file('resolution_bias_data'), 'wb') as fp:
-		pickle.dump(data_list, fp)
-	fp.close()
-
-
-
-
-
 def seasonal_spatial_plot():
 	lat = 2
 	lon = 3 

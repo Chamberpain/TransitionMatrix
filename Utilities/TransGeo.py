@@ -2,6 +2,7 @@ from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
 from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
 from GeneralUtilities.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.list import find_nearest,flat_list,LonList,LatList,GeoList
+import numpy as np
 import geopy
 
 from TransitionMatrix.Utilities.__init__ import ROOT_DIR

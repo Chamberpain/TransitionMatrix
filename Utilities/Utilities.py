@@ -1,7 +1,7 @@
 import numpy as np 
 import scipy.sparse
 import geopy
-from TransitionMatrix.Utilities.Compute.trans_read import TransMat
+from TransitionMatrix.Utilities.TransMat import TransMat
 
 def matrix_difference_compare(matrix_1,matrix_2):
     # eig_vals,l_eig_vecs,r_eig_vecs = scipy.linalg.eig(matrix_1.todense(),left=True)
