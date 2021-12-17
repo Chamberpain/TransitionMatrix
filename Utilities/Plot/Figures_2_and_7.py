@@ -25,7 +25,7 @@ ax1 = fig.add_subplot(1,1,1, projection=ccrs.PlateCarree())
 XX,YY,ax1 = trans_mat.trans_geo.plot_setup(ax=ax1)
 ax1.scatter(argos_start_lon_list,argos_start_lat_list,s=0.5,c='r',label='ARGOS',zorder=11)
 ax1.scatter(gps_start_lon_list,gps_start_lat_list,s=0.5,c='b',label='GPS',zorder=11)
-ax1.legend(loc='upper center', bbox_to_anchor=(0.5, 1.2),
+ax1.legend(loc='upper center', bbox_to_anchor=(0.5, 1.1),
   		ncol=3, fancybox=True, shadow=True, markerscale=20)
 plt.savefig(file_handler.out_file('Figure_2'))
 plt.close()
@@ -34,7 +34,7 @@ plt.close()
 
 tp = TransMat.load_from_type(lat_spacing=2,lon_spacing=2,time_step=90)
 fig = plt.figure(figsize=(14,14))
-ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
+ax2 = fig.add_subplot(1,1,1, projection=ccrs.PlateCarree())
 XX,YY,ax2 = tp.trans_geo.plot_setup(ax=ax2)
 number_matrix = tp.new_sparse_matrix(tp.number_data)
 k = number_matrix.sum(axis=0)
@@ -47,5 +47,5 @@ ax2.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=tp.trans_geo.numb
 # plt.title('Transition Density',size=30)
 PCM = ax2.get_children()[0]
 fig.colorbar(PCM,pad=.15,label='Transition Number',orientation='horizontal',fraction=0.10)
-plt.savefig(file_handler.out_file('Figure_4'))
+plt.savefig(file_handler.out_file('Figure_7'))
 plt.close()

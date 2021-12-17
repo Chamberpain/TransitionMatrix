@@ -14,6 +14,17 @@ plt.rcParams['font.size'] = '16'
 plot_color_dict = {(1,1):'teal',(1,2):'brown',(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
+def distribution_and_mean_of_column(self,geo_point,pad = 6,ax=False):
+	from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
+	col_idx = self.trans_geo.total_list.index(geo_point)
+	mean = self.mean_of_column(geo_point)
+	XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=pad,ax=ax).get_map()
+	ax.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()),cmap='Blues')
+	ax.scatter(mean.longitude,mean.latitude,c='pink',linewidths=10,marker='x',s=160,zorder=10)
+	ax.scatter(geo_point.longitude,geo_point.latitude,c='red',linewidths=10,marker='x',s=160,zorder=10)
+
+TransMat.distribution_and_mean_of_column = distribution_and_mean_of_column
+
 def resolution_standard_error():
 	data_list = []
 	for time in [30,60,90,120,150,180]:	

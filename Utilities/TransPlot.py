@@ -22,53 +22,8 @@ class TransPlot(TransMat):
 	def __init__(self, *args,**kwargs):
 		super().__init__(*args,**kwargs)
 
-	def number_plot(self,ax=False): 
-		number_matrix = self.new_sparse_matrix(self.number_data)
-		k = number_matrix.sum(axis=0)
-		k = k.T
-		print(k)
-		number_matrix_plot = self.trans_geo.transition_vector_to_plottable(k)
-		XX,YY,ax = self.trans_geo.plot_setup(ax=ax)  
-		number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
-		ax.pcolormesh(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=self.trans_geo.number_vmin,vmax=self.trans_geo.number_vmax)
-		# plt.title('Transition Density',size=30)
-		PCM = ax.get_children()[0]
-		cbar = plt.colorbar(PCM,ax=ax)
-		cbar.set_label(label='Transition Number',size=30)
-		cbar.ax.tick_params(labelsize=30)
-		return ax
-
-	def distribution_and_mean_of_column(self,col_idx):
-		from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
-		idx_lat,idx_lon,dummy = tuple(self.trans_geo.total_list[col_idx])
-		east_west, north_south = self.return_mean()
-		x_mean = east_west[col_idx]+idx_lon
-		y_mean = north_south[col_idx]+idx_lat
-		XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=20).get_map()
-		plt.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()))
-		plt.colorbar()
-		plt.scatter(x_mean,y_mean,c='pink',linewidths=5,marker='x',s=80,zorder=10)
 
 
-	def return_standard_error(self):
-		number_matrix = self.new_sparse_matrix(self.number_data)
-		self.trans_geo.get_direction_matrix()
-		row_list, column_list, data_array = scipy.sparse.find(self)
-		n_s_distance_weighted = self.trans_geo.north_south[row_list,column_list]*data_array
-		e_w_distance_weighted = self.trans_geo.east_west[row_list,column_list]*data_array
-		# this is like calculating x*f(x)
-		n_s_mat = self.new_sparse_matrix(n_s_distance_weighted)
-		E_y = np.array(n_s_mat.sum(axis=0)).flatten()
-		e_w_mat = self.new_sparse_matrix(e_w_distance_weighted)
-		E_x = np.array(e_w_mat.sum(axis=0)).flatten()
-		#this is like calculating E(x) = sum(xf(x)) = mean
-		ns_x_minus_mu = (self.trans_geo.north_south[row_list,column_list]-E_y[column_list])**2
-		ew_x_minus_mu = (self.trans_geo.east_west[row_list,column_list]-E_x[column_list])**2
-		std_data = (ns_x_minus_mu+ew_x_minus_mu)*data_array
-		std_mat = self.new_sparse_matrix(std_data)
-		sigma = np.array(np.sqrt(std_mat.sum(axis=0))).flatten()
-		std_error = sigma/np.sqrt(number_matrix.sum(axis=0))
-		return np.array(std_error).flatten()
 
 	def standard_error_plot(self):
 
