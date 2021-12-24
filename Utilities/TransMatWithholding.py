@@ -10,21 +10,6 @@ import pickle
 
 file_handler = FilePathHandler(ROOT_DIR,'transmat_withholding')
 
-def resolution_standard_error():
-	data_list = []
-	for time in [30,60,90,120,150,180]:	
-		for lat,lon in [(1,1),(1,2),(2,2),(3,3),(4,4),(2,3),(4,6)]:
-			print('lat = ',lat)
-			print('lon = ',lon)
-			print('time = ',time)
-			trans_mat = TransPlot.load_from_type(lat_spacing=lat,lon_spacing=lon,time_step=time)
-			standard_error_holder = trans_mat.return_standard_error()
-			data_list.append((standard_error_holder.mean(),standard_error_holder.std(),lat,lon,time))
-
-	with open(file_handler.tmp_file('resolution_standard_error'), 'wb') as fp:
-		pickle.dump(data_list, fp)
-	fp.close()
-
 def data_withholding_calc():
 	datalist = []
 	coord_list = [(2,2),(2,3),(3,3),(4,4),(4,6)]

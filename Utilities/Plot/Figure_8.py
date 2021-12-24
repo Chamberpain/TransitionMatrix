@@ -8,6 +8,7 @@ from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 from GeneralUtilities.Filepath.instance import FilePathHandler
 import cartopy.crs as ccrs
 from pyproj import Geod
+import scipy.sparse
 
 plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
@@ -104,7 +105,5 @@ def quiver_plot(self):
 	plt.close()
 
 TransMat.quiver_plot = quiver_plot
-
-
 trans_geo = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = 2,lon_spacing = 2,time_step = 90)
 trans_geo.quiver_plot()

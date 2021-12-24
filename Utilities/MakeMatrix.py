@@ -329,13 +329,12 @@ def argos_gps_calc():
 					print('file ',trans_geo.make_filename(),' already there, continuing')
 					continue
 				all_dict = DictToken(ArgoReader.all_dict)
-				assert len(all_dict)==len(ReadToken.all_dict)
 				all_dict.bin_dict = {}
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 				start_bins,end_bins = zip(*all_dict.bin_dict.keys())
 				total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
 
-				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list,all_dict)
 				# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 				trans_geo.set_total_list([geopy.Point(x) for x in total_list])
 				transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)

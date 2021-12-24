@@ -68,27 +68,6 @@ class Float(scipy.sparse.csc_matrix):
 		for _ in range(x):
 			self.df = pd.concat([self.df,pd.DataFrame({'latitude':[lat],'longitude':[lon]})])
 
-class Core(Float):
-	traj_file_type = 'Core'
-	marker_color = 'r'
-	marker_size = 5
-
-	@classmethod
-	def recent_floats(cls,GeoClass, FloatClass):
-		var_grid = FloatClass.get_recent_bins(GeoClass.get_lat_bins(),GeoClass.get_lon_bins())
-		var_date = FloatClass.get_recent_date_list()
-		var_grid = [x for date,x in zip(var_date,var_grid) if date>max(var_date)-datetime.timedelta(days=180)]
-		idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
-		holder_array = np.zeros([len(GeoClass.total_list),1])
-		for idx in idx_list:
-			holder_array[idx]+=1
-		return cls(holder_array,trans_geo=GeoClass)
-
-class BGC(Float):
-	traj_file_type = 'BGC'	
-	marker_color = 'm'
-	marker_size = 20
-
 	@classmethod
 	def recent_floats(cls,GeoClass, FloatClass, days_delta = 0):
 		out_list = []
@@ -97,13 +76,13 @@ class BGC(Float):
 		deployment_date_list = FloatClass.get_deployment_date_list()
 		recent_date_list = FloatClass.get_recent_date_list()
 		bin_list = FloatClass.get_recent_bins(lat_bins,lon_bins)
-		date_mask =[max(recent_date_list)-datetime.timedelta(days=180)<x for x in recent_date_list]
+		date_mask =[max(recent_date_list)-datetime.timedelta(days=270)<x for x in recent_date_list]
 		age_list = [(max(recent_date_list)-x).days for x in deployment_date_list]
 		for variable in GeoClass.variable_list:
 			float_var = GeoClass.variable_translation_dict[variable]
 			sensor_list = FloatClass.get_sensors()
 			sensor_mask = [float_var in x for x in sensor_list]
-			age_mask = [(x+days_delta)<(365*4) for x in age_list]
+			age_mask = [(x+days_delta)<(365*5) for x in age_list]
 			mask = np.array(sensor_mask)&np.array(date_mask)&np.array(age_mask)
 			var_grid = np.array(bin_list)[mask]
 
@@ -121,3 +100,17 @@ class BGC(Float):
 		trans_geo = copy.deepcopy(self.trans_geo)
 		trans_geo.variable_list = [row_var]
 		return BGC(split_array,split_array.shape,trans_geo=trans_geo)
+
+
+class Core(Float):
+	traj_file_type = 'Core'
+	marker_color = 'r'
+	marker_size = 5
+
+
+class BGC(Float):
+	traj_file_type = 'BGC'	
+	marker_color = 'm'
+	marker_size = 20
+
+

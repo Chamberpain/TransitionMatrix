@@ -23,8 +23,8 @@ class GeoBase(object):
 		self.lat_sep = lat_sep
 		self.lon_sep = lon_sep
 
-	def plot_setup(self,ax=False):
-		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax).get_map()
+	def plot_setup(self,ax=False,**kwargs):
+		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax,**kwargs).get_map()
 		return (XX,YY,ax)
 
 	def set_total_list(self,total_list):
