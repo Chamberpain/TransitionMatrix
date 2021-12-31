@@ -17,7 +17,7 @@ from TransitionMatrix.Utilities.Utilities import colorline,get_cmap
 plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
-cmap = get_cmap()	
+color_map = plt. cm. get_cmap('viridis')
 full_argo_list()
 trans_mat = TransMat.load_from_type(lat_spacing=3,lon_spacing=3,time_step=90)
 trans_mat.trans_geo.variable_list = VariableList(['thetao','so','ph','chl','o2'])
@@ -35,7 +35,7 @@ for filename,var in zip(['figure_15','figure_16','figure_17','figure_18'],['so',
 	print(np.mean(plottable))
 	plottable = np.ma.masked_less(plottable,1)
 	XX,YY,ax = trans_mat.trans_geo.plot_setup(ax=ax1)
-	ax.pcolor(XX,YY,plottable,vmin=0,vmax=100)
+	ax.pcolor(XX,YY,plottable,vmin=0,vmax=100,cmap=color_map.reversed())
 	ax.annotate('a', xy = (0.17,0.8),xycoords='axes fraction',zorder=11,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 
 	ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
@@ -49,9 +49,9 @@ for filename,var in zip(['figure_15','figure_16','figure_17','figure_18'],['so',
 	print(np.mean(plottable))
 	plottable = np.ma.masked_less(plottable,1)
 	XX,YY,ax = total_obs_all.trans_geo.plot_setup(ax=ax2)
-	ax.pcolor(XX,YY,plottable,vmin=0,vmax=100)
+	ax.pcolor(XX,YY,plottable,vmin=0,vmax=100,cmap=color_map.reversed())
 	ax.annotate('b', xy = (0.17,0.8),xycoords='axes fraction',zorder=11,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
-	PCM = ax.get_children()[2]
+	PCM = ax.get_children()[3]
 	plt.subplots_adjust(left=0.06)
 	fig.colorbar(PCM,ax=[ax1,ax2],label='Observation in Next Year (%)',fraction=0.10,)
 	plt.savefig(file_handler.out_file(filename))

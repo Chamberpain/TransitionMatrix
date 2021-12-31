@@ -66,7 +66,6 @@ XX,YY,ax1 = traj_class_1.trans_geo.plot_setup(ax = ax1,adjustable=True)
 plottable = traj_class_1.trans_geo.transition_vector_to_plottable(traj_class_1.todense().dot(float_vector_1.todense()))
 traj_class_1.traj_file_type = 'SOSE'
 ax1.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax=0.3,transform=ccrs.PlateCarree())
-PCM = ax1.get_children()[0]
 row_idx,column_idx,data = scipy.sparse.find(float_vector_1)
 
 lats = [list(traj_class_1.trans_geo.total_list)[x].latitude for x in row_idx]
@@ -80,7 +79,7 @@ traj_class_2.traj_file_type = 'Argo'
 XX,YY,ax2 = traj_class_2.trans_geo.plot_setup(ax = ax2)
 plottable = traj_class_2.trans_geo.transition_vector_to_plottable(traj_class_2.todense().dot(float_vector_2.todense()))
 ax2.pcolormesh(XX,YY,np.ma.masked_less(plottable,5*10**-3),cmap=plt.cm.YlGn,vmax = 0.3)
-PCM = ax2.get_children()[2]
+PCM = ax2.get_children()[3]
 fig.colorbar(PCM,ax=ax1,location = 'left',fraction=0.10,label='Probability Density/Age')
 row_idx,column_idx,data = scipy.sparse.find(float_vector_2)
 

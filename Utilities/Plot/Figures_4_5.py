@@ -101,7 +101,7 @@ def figure_4():
 	short_mat = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = lat,lon_spacing = lon,time_step = 30)
 	short_mat = short_mat.multiply(5)
 	long_mat = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = lat,lon_spacing = lon,time_step = 180)
-	fig = plt.figure(figsize=(12,12))
+	fig = plt.figure(figsize=(14,14))
 	ax1 = fig.add_subplot(2,2,1, projection=ccrs.PlateCarree())
 	long_mat.distribution_and_mean_of_column(loc,ax=ax1,pad=25)
 	ax2 = fig.add_subplot(2,2,2, projection=ccrs.PlateCarree())
@@ -139,12 +139,15 @@ def figure_4():
 	ticks = [30,60,90,120]
 	ax3.set_xticks(ticks)
 	ax4.set_xticks(ticks)
-	ax3.set_ylabel('Misfit')
-	ax4.set_ylabel('Misfit')
-	ax3.legend(loc='upper center', bbox_to_anchor=(1.1, 2.45),
+	ax3.set_ylabel('Misfit (km)')
+	ax4.set_ylabel('Misfit (km)')
+	ax4.set_xlabel('Timestep')
+	ax3.set_xlabel('Timestep')
+	ax3.legend(loc='upper center', bbox_to_anchor=(1.1, 1.25),
           ncol=4, fancybox=True, shadow=True)
 	ax3.annotate('c', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	ax4.annotate('d', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
+	plt.subplots_adjust(hspace=0.35)
 	plt.savefig(file_handler.out_file('figure_4'))
 	plt.close()
 
@@ -157,7 +160,7 @@ def resolution_bias_plot():
 	idx = big_mat.trans_geo.total_list.index(loc)
 	reduced_loc_list = big_mat.trans_geo.total_list.reduced_res(idx,2,2)
 
-	fig = plt.figure(figsize=(12,12))
+	fig = plt.figure(figsize=(14,14))
 	ax1 = fig.add_subplot(2,2,1, projection=ccrs.PlateCarree())
 	XX,YY,ax1 = PointCartopy(loc,lat_grid = small_mat.trans_geo.get_lat_bins(),
 		lon_grid = small_mat.trans_geo.get_lon_bins(),pad=25,ax=ax1).get_map()
@@ -232,7 +235,9 @@ def resolution_bias_plot():
 	ax4.set_ylabel('Error')
 	ax3.annotate('c', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	ax4.annotate('d', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
-	ax4.legend(loc='upper center', bbox_to_anchor=(-.2, 2.45),
+	ax3.legend(loc='upper center', bbox_to_anchor=(1.1, 1.25),
           ncol=4, fancybox=True, shadow=True)
+	plt.subplots_adjust(hspace=0.35)
+
 	plt.savefig(file_handler.out_file('figure_5'))
 	plt.close()

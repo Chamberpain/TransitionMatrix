@@ -50,7 +50,7 @@ XX,YY,ax2 = tp.trans_geo.plot_setup(ax=ax2)
 number_matrix_plot = np.ma.masked_equal(number_matrix_plot,0)   #this needs to be fixed in the plotting routine, because this is just showing the number of particles remaining
 ax2.pcolor(XX,YY,number_matrix_plot,cmap=plt.cm.magma,vmin=tp.trans_geo.number_vmin,vmax=tp.trans_geo.number_vmax)
 # plt.title('Transition Density',size=30)
-PCM = ax2.get_children()[4]
+PCM = ax2.get_children()[6]
 fig.colorbar(PCM,pad=.15,label='Transition Number',orientation='horizontal',fraction=0.10)
 plt.savefig(file_handler.out_file('Figure_7'))
 plt.close()

@@ -6,7 +6,7 @@ from GeneralUtilities.Filepath.instance import FilePathHandler
 import cartopy.crs as ccrs
 import scipy
 import numpy as np 
-
+import matplotlib.colors as colors
 
 plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
@@ -46,7 +46,7 @@ def figure_6():
 	k = number_matrix.sum(axis=0)
 	k = k.T
 	standard_error_plot = np.ma.array(standard_error_plot,mask=high_res.trans_geo.transition_vector_to_plottable(k)==0)
-	ax1.pcolormesh(XX,YY,standard_error_plot*100,cmap=plt.cm.cividis,vmax=high_res.trans_geo.std_vmax)
+	ax1.pcolormesh(XX,YY,standard_error_plot*100,cmap=plt.cm.cividis,norm=colors.LogNorm(vmin=1, vmax=high_res.trans_geo.std_vmax),)
 
 	ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
 	high_res = TransMat.load_from_type(GeoClass=TransitionGeo,lat_spacing = 4,lon_spacing = 4,time_step = 90)
@@ -58,8 +58,8 @@ def figure_6():
 	k = number_matrix.sum(axis=0)
 	k = k.T
 	standard_error_plot = np.ma.array(standard_error_plot,mask=high_res.trans_geo.transition_vector_to_plottable(k)==0)
-	ax2.pcolormesh(XX,YY,standard_error_plot*100,cmap=plt.cm.cividis,vmax=high_res.trans_geo.std_vmax)
-	PCM = ax2.get_children()[2]
+	ax2.pcolormesh(XX,YY,standard_error_plot*100,cmap=plt.cm.cividis,norm=colors.LogNorm(vmin=1, vmax=high_res.trans_geo.std_vmax),)
+	PCM = ax2.get_children()[3]
 	fig.colorbar(PCM,ax=[ax1,ax2],fraction=0.10,label='Mean Standard Error (%)')
 	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 	ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)

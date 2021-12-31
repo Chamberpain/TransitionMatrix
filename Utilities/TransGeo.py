@@ -4,10 +4,20 @@ from GeneralUtilities.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.list import find_nearest,flat_list,LonList,LatList,GeoList
 import numpy as np
 import geopy
-
+import matplotlib.colors
 from TransitionMatrix.Utilities.__init__ import ROOT_DIR
+import cartopy.crs as ccrs
 
 file_handler = FilePathHandler(ROOT_DIR,'TransMat')
+
+def get_cmap():
+    norm = matplotlib.colors.Normalize(0,400/256.)
+    colors = [[norm(0), "lightgray"],
+              [norm(400/256.), "lightgray"]]
+    cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", colors)
+    return cmap
+
+
 
 class GeoBase(object):
 	""" geo information and tools for transition matrices """
@@ -25,6 +35,9 @@ class GeoBase(object):
 
 	def plot_setup(self,ax=False,**kwargs):
 		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax,**kwargs).get_map()
+		full_array = self.transition_vector_to_plottable(np.ones(len(self.total_list)).tolist())
+		gray_array = np.ma.masked_array(np.ones(full_array.shape),mask=~full_array.mask)
+		ax.pcolor(XX,YY,gray_array,cmap=get_cmap(),transform=ccrs.PlateCarree())
 		return (XX,YY,ax)
 
 	def set_total_list(self,total_list):

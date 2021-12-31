@@ -7,8 +7,12 @@ import geopy
 import numpy
 import scipy.sparse
 import matplotlib.pyplot as plt
+from GeneralUtilities.Filepath.instance import FilePathHandler
+from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 
+file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 time_dict = {'I05':1,'A12':1,'SR04':1,'A13.5':1,'P02':1,'MED01':1,'P04':1,'I09':2,'I08':2,'A16':2,'P16':3,'P15':3,'S04P':4,'ARC01':4,'P06':5}
+color_map = plt. cm. get_cmap('viridis')
 
 def read_goship(filename):
 	try:
@@ -65,14 +69,24 @@ for year in goship_df.year.unique():
 	for idx in holder.idx_list.tolist():
 		float_holder[int(idx),0]=1
 	float_list.append(scipy.sparse.csc_matrix(float_holder))
+
+fig = plt.figure(figsize=(20,14))
+ax1 = fig.add_subplot(2,1,1, projection=ccrs.PlateCarree())
+XX,YY,ax1 = trans_mat.trans_geo.plot_setup(ax=ax1)
 total_obs = np.sum([scipy.sparse.csc_matrix(x).dot(y) for x,y in zip(total_obs_list,float_list)])
 plottable = trans_mat.trans_geo.transition_vector_to_plottable(total_obs.todense())*100
 plottable = np.ma.masked_equal(plottable,0)
-plt.pcolor(plottable)
-plt.show()
+ax1.pcolor(XX,YY,plottable,cmap=color_map.reversed())
 
+ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
+XX,YY,ax2 = trans_mat.trans_geo.plot_setup(ax=ax2)
 moment_in_time = np.sum([scipy.sparse.csc_matrix(x).dot(y) for x,y in zip(moment_in_time_list,float_list)])
 plottable = trans_mat.trans_geo.transition_vector_to_plottable(moment_in_time.todense())*100
 plottable = np.ma.masked_equal(plottable,0)
-plt.pcolor(plottable)
-plt.show()
+ax2.pcolor(XX,YY,plottable,cmap=color_map.reversed())
+PCM = ax2.get_children()[3]
+fig.colorbar(PCM,ax=[ax1,ax2],fraction=0.10,label='Chance of Observation (%)')
+ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
+ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
+plt.savefig(file_handler.out_file('figure_20'))
+plt.close()

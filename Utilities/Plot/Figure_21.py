@@ -32,7 +32,7 @@ XX,YY,ax2 = sose_mat.trans_geo.plot_setup(ax = ax2)
 ax2.pcolormesh(XX,YY,ns_std_diff+ew_std_diff,vmin=-1,vmax=1,cmap='bwr',transform=ccrs.PlateCarree())
 ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
-PCM = ax2.get_children()[2]
+PCM = ax2.get_children()[4]
 plt.colorbar(PCM,ax=[ax1,ax2],fraction=0.10,label='Transition Diffusion')	
 plt.savefig(file_handler.out_file('figure_21'))
 plt.close()
