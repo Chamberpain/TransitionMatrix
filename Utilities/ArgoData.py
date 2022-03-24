@@ -69,6 +69,17 @@ class Float(scipy.sparse.csc_matrix):
 			self.df = pd.concat([self.df,pd.DataFrame({'latitude':[lat],'longitude':[lon]})])
 
 	@classmethod
+	def recent_pos_list(cls,FloatClass,days_delta=0):
+		pos_list = FloatClass.get_recent_pos()
+		recent_date_list = FloatClass.get_recent_date_list()
+		deployment_date_list = FloatClass.get_deployment_date_list()
+		date_mask =[max(recent_date_list)-datetime.timedelta(days=270)<x for x in recent_date_list]
+		age_list = [(max(recent_date_list)-x).days for x in deployment_date_list]
+		age_mask = [(x+days_delta)<(365*5) for x in age_list]
+		mask = np.array(date_mask)&np.array(age_mask)
+		return np.array(pos_list)[mask].tolist()
+
+	@classmethod
 	def recent_floats(cls,GeoClass, FloatClass, days_delta = 0):
 		out_list = []
 		lat_bins = GeoClass.get_lat_bins()

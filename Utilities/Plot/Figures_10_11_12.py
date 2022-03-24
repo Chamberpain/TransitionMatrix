@@ -13,7 +13,7 @@ import cartopy.crs as ccrs
 import scipy
 from TransitionMatrix.Utilities.Utilities import colorline,get_cmap,shiftgrid
 from GeneralUtilities.Plot.Cartopy.regional_plot import SouthernOceanCartopy,PacificCartopy,AtlanticCartopy
-from TransitionMatrix.Utilities.TransGeo import get_cmap
+from TransitionMatrix.Utilities.TransGeo import get_cmap as get_grey_cmap
 
 plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
@@ -122,7 +122,7 @@ for trans,float_mat,label,k in zip(total_obs,float_list,['a','b'],[4,8]):
 	pcm = ax.pcolor(XX,YY,plottable,cmap=cmap,transform=ccrs.PlateCarree())
 	full_array = trans_mat.trans_geo.transition_vector_to_plottable(np.ones(len(trans_mat.trans_geo.total_list)).tolist())
 	gray_array = np.ma.masked_array(np.ones(full_array.shape),mask=~full_array.mask)
-	ax.pcolor(XX,YY,gray_array,cmap=get_cmap(),transform=ccrs.PlateCarree())
+	ax.pcolor(XX,YY,gray_array,cmap=get_grey_cmap(),transform=ccrs.PlateCarree())
 
 
 	for idx in scipy.sparse.find(float_mat.get_sensor(var))[0]:

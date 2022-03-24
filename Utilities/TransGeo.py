@@ -17,15 +17,9 @@ def get_cmap():
     cmap = matplotlib.colors.LinearSegmentedColormap.from_list("", colors)
     return cmap
 
-
-
 class GeoBase(object):
 	""" geo information and tools for transition matrices """
 	plot_class = GlobalCartopy
-	file_type = 'argo'
-	number_vmin=0
-	number_vmax=250
-	std_vmax=50
 	def __init__(self,lat_sep=2,lon_sep=2):
 		assert isinstance(lat_sep,int)
 		assert isinstance(lon_sep,int)
@@ -76,7 +70,7 @@ class GeoBase(object):
 		return plottable.T
 
 	def plottable_to_transition_vector(self,plottable):
-		vector = np.zeros([len(index_list)])
+		vector = np.zeros([len(self.total_list)])
 		lon_grid = self.get_lon_bins().tolist()
 		lat_grid = self.get_lat_bins().tolist()
 		for n,pos in enumerate(self.total_list):
@@ -111,9 +105,11 @@ class GeoBase(object):
 		assert (self.north_south>=-180/self.lat_sep).all()
 		assert (self.north_south<=180/self.lat_sep).all()
 
-
-
 class TransitionGeo(GeoBase):
+	file_type = 'argo'
+	number_vmin=0
+	number_vmax=250
+	std_vmax=50	
 	def __init__(self,*args,time_step=60,**kwargs):
 		super().__init__(*args,**kwargs)
 		assert isinstance(time_step,int)
