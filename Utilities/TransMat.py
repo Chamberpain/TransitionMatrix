@@ -1,7 +1,7 @@
 from GeneralUtilities.Compute.list import flat_list,LonList,LatList,GeoList
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
 from TransitionMatrix.Utilities.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 
 import numpy as np
@@ -249,6 +249,11 @@ class TransMat(BaseMat):
 		new_matrix.set_trans_geo(trans_geo)
 		new_matrix.trans_geo.set_total_list(new_total_list)
 		new_matrix.rescale()
+		number_matrix = self.new_sparse_matrix(self.number_data)
+		number_matrix = number_matrix[matrix_idx,:]
+		number_matrix = number_matrix[:,matrix_idx]
+		DUM,DUM,data = scipy.sparse.find(number_matrix)
+		new_matrix.number_data = data
 		return new_matrix
 
 	def rescale(self,checksum=10**-2):

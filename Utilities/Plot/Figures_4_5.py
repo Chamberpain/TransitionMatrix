@@ -1,5 +1,6 @@
 import geopy
 from TransitionMatrix.Utilities.TransMat import TransMat
+from GeneralUtilities.Compute.constants import degree_dist
 import matplotlib.pyplot as plt
 from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
@@ -127,11 +128,11 @@ def figure_4():
 			ew_std_diff_holder = np.array(ew_std_diff)[mask]
 			ns_std_diff_holder = np.array(ns_std_diff)[mask]
 
-			out = np.sqrt(ew_mean_diff_holder**2+ns_mean_diff_holder**2)
+			out = degree_dist*np.sqrt(ew_mean_diff_holder**2+ns_mean_diff_holder**2)
 			print('I am plotting ',system)
 			ax3.plot(np.unique(time),out,color=plot_color_dict[grid],label=str(grid))
 			ax3.scatter(np.unique(time),out,color=plot_color_dict[grid])
-			out = np.sqrt(ew_std_diff_holder**2+ns_std_diff_holder**2)
+			out = degree_dist*np.sqrt(ew_std_diff_holder**2+ns_std_diff_holder**2)
 			ax4.plot(np.unique(time),out,color=plot_color_dict[grid],label=str(grid))
 			ax4.scatter(np.unique(time),out,color=plot_color_dict[grid])
 	ax3.set_xlim(28,122)
@@ -141,8 +142,8 @@ def figure_4():
 	ax4.set_xticks(ticks)
 	ax3.set_ylabel('Misfit (km)')
 	ax4.set_ylabel('Misfit (km)')
-	ax4.set_xlabel('Timestep')
-	ax3.set_xlabel('Timestep')
+	ax4.set_xlabel('Timestep (days)')
+	ax3.set_xlabel('Timestep (days)')
 	ax3.legend(loc='upper center', bbox_to_anchor=(1.1, 1.25),
           ncol=4, fancybox=True, shadow=True)
 	ax3.annotate('c', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
@@ -224,8 +225,8 @@ def resolution_bias_plot():
 			plot_std.append(std_holder[0])
 		ax4.plot(time_axis,plot_mean,label=str((lat_holder,lon_holder)),color=plot_color_dict[(lat_holder,lon_holder)])
 		ax4.scatter(time_axis,plot_mean,c=plot_color_dict[(lat_holder,lon_holder)])
-	ax4.set_xlabel('Timestep')
-	ax3.set_xlabel('Timestep')
+	ax4.set_xlabel('Timestep (days)')
+	ax3.set_xlabel('Timestep (days)')
 
 	ticks = [30,60,90,120,150,180]
 	ax3.set_xticks(ticks)

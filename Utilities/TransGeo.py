@@ -1,6 +1,6 @@
 from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
 from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.list import find_nearest,flat_list,LonList,LatList,GeoList
 import numpy as np
 import geopy
@@ -21,8 +21,8 @@ class GeoBase(object):
 	""" geo information and tools for transition matrices """
 	plot_class = GlobalCartopy
 	def __init__(self,lat_sep=2,lon_sep=2):
-		assert isinstance(lat_sep,int)
-		assert isinstance(lon_sep,int)
+		# assert isinstance(lat_sep,int)
+		# assert isinstance(lon_sep,int)
 
 		self.lat_sep = lat_sep
 		self.lon_sep = lon_sep
@@ -31,7 +31,7 @@ class GeoBase(object):
 		XX,YY,ax = self.plot_class(self.get_lat_bins(),self.get_lon_bins(),ax=ax,**kwargs).get_map()
 		full_array = self.transition_vector_to_plottable(np.ones(len(self.total_list)).tolist())
 		gray_array = np.ma.masked_array(np.ones(full_array.shape),mask=~full_array.mask)
-		ax.pcolor(XX,YY,gray_array,cmap=get_cmap(),transform=ccrs.PlateCarree())
+		ax.pcolor(XX,YY,gray_array,cmap=get_cmap(),transform=ccrs.PlateCarree(),zorder=-5)
 		return (XX,YY,ax)
 
 	def set_total_list(self,total_list):

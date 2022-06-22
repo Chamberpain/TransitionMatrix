@@ -9,7 +9,7 @@ import cartopy.crs as ccrs
 from TransitionMatrix.Utilities.Utilities import colorline
 import cartopy.crs as ccrs
 
-plt.rcParams['font.size'] = '16'
+plt.rcParams['font.size'] = '26'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
 lon = 2

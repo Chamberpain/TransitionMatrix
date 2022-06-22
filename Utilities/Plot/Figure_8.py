@@ -36,7 +36,7 @@ def quiver_plot(self):
 	geod = Geod(ellps='WGS84')
 	XX,YY,ax1 = self.trans_geo.plot_setup(ax = ax1)
 	q = ax1.quiver(XX[::sf,::sf],YY[::sf,::sf],quiver_e_w[::sf,::sf],quiver_n_s[::sf,::sf],scale=10)
-	qk= plt.quiverkey (q,0.5, 1.02, 1, '1 km hr$^{-1}$', labelpos='N')
+	qk= plt.quiverkey (q,0.5, 1.02, 20/27.8, '20 cm s$^{-1}$', labelpos='N')
 	plt.annotate('a', xy = (0.17,0.9),xycoords='axes fraction',zorder=11,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 
 	scale_factor = .001

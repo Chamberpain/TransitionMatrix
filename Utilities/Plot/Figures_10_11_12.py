@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.colors
 from GeneralUtilities.Compute.list import VariableList
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list,full_argo_list
-from OptimalArray.Utilities.target_load import InverseInstance,InverseGeo
 from TransitionMatrix.Utilities.ArgoData import Core,BGC
 from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader
 from GeneralUtilities.Filepath.instance import FilePathHandler
@@ -15,7 +14,7 @@ from TransitionMatrix.Utilities.Utilities import colorline,get_cmap,shiftgrid
 from GeneralUtilities.Plot.Cartopy.regional_plot import SouthernOceanCartopy,PacificCartopy,AtlanticCartopy
 from TransitionMatrix.Utilities.TransGeo import get_cmap as get_grey_cmap
 
-plt.rcParams['font.size'] = '16'
+plt.rcParams['font.size'] = '26'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
 cmap = get_cmap()	
@@ -63,7 +62,7 @@ for trans,float_mat,label,k in zip(total_obs,float_list,['a','b'],[4,8]):
 		ns_holder = ns[:k,idx]
 		lons = [point.longitude + x for x in ew_holder]
 		lats = [point.latitude + x for x in ns_holder]
-		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0))
+		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0),linewidth=4)
 	i += 1
 fig.colorbar(lc,ax=ax_list,pad=.05,label='Days Since Deployment',location='left')
 fig.colorbar(pcm,ax=ax_list,pad=.05,label='Chance of Float (%)',location='right')
@@ -92,7 +91,7 @@ for trans,float_mat,label,k in zip(total_obs,float_list,['a','b'],[4,8]):
 		ns_holder = ns[:k,idx]
 		lons = [point.longitude + x for x in ew_holder]
 		lats = [point.latitude + x for x in ns_holder]
-		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0))
+		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0),linewidth=4)
 	i += 1
 fig.colorbar(lc,ax=ax_list,pad=.05,label='Days Since Deployment',location='top')
 fig.colorbar(pcm,ax=ax_list,pad=.05,label='Chance of Float (%)',location='bottom')
@@ -131,7 +130,7 @@ for trans,float_mat,label,k in zip(total_obs,float_list,['a','b'],[4,8]):
 		ns_holder = ns[:k,idx]
 		lons = [point.longitude + x for x in ew_holder]
 		lats = [point.latitude + x for x in ns_holder]
-		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0))
+		lc = colorline(lons,lats,ax,z = [90*x for x in range(k)],norm=plt.Normalize(0.0, 720.0),linewidth=4)
 fig.colorbar(lc,ax=ax_list,pad=.07,label='Days Since Deployment',location='left')
 fig.colorbar(pcm,ax=ax_list,pad=.05,label='Chance of Float (%)',location='right')
 plt.savefig(file_handler.out_file('figure_12'))

@@ -80,7 +80,7 @@ def get_cmap():
 
 
 def colorline(
-        x, y, axes, z=None, cmap='plasma', norm=plt.Normalize(0.0, 900.0),
+        x, y, axes, z=None, cmap='plasma', norm=plt.Normalize(0.0, 1080.0),
         linewidth=1.5, alpha=1.0,):
 
     def make_segments(x, y):
