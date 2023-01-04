@@ -1,5 +1,5 @@
 from GeneralUtilities.Compute.list import flat_list,LonList,LatList,GeoList
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
+from GeneralUtilities.Data.Lagrangian.Argo.array_class import ArgoArray
 from TransitionMatrix.Utilities.__init__ import ROOT_DIR
 from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo

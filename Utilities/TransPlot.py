@@ -1,9 +1,10 @@
 from __future__ import print_function
 import matplotlib.pyplot as plt
 import numpy as np
-from TransitionMatrix.Utilities.Compute.trans_read import TransMat,TransitionGeo
+from TransitionMatrix.Utilities.TransMat import TransMat
+from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 import scipy
 import scipy.sparse.linalg
 import matplotlib.colors as colors
@@ -11,7 +12,6 @@ import matplotlib.cm as cm
 import os
 import cartopy.crs as ccrs
 from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
-from 
 
 plt.rcParams['font.size'] = '16'
 file_handler = FilePathHandler(ROOT_DIR,'transition_matrix_plot')
@@ -172,4 +172,23 @@ class TransPlot(TransMat):
 			plt.colorbar(label='% particles')
 			plt.title('Distribution after '+str(months)+' Months')
 			plt.show()
-  
+
+	def return_standard_error(self):
+		number_matrix = self.new_sparse_matrix(self.number_data)
+		self.trans_geo.get_direction_matrix()
+		row_list, column_list, data_array = scipy.sparse.find(self)
+		n_s_distance_weighted = self.trans_geo.north_south[row_list,column_list]*data_array
+		e_w_distance_weighted = self.trans_geo.east_west[row_list,column_list]*data_array
+		# this is like calculating x*f(x)
+		n_s_mat = self.new_sparse_matrix(n_s_distance_weighted)
+		E_y = np.array(n_s_mat.sum(axis=0)).flatten()
+		e_w_mat = self.new_sparse_matrix(e_w_distance_weighted)
+		E_x = np.array(e_w_mat.sum(axis=0)).flatten()
+		#this is like calculating E(x) = sum(xf(x)) = mean
+		ns_x_minus_mu = (self.trans_geo.north_south[row_list,column_list]-E_y[column_list])**2
+		ew_x_minus_mu = (self.trans_geo.east_west[row_list,column_list]-E_x[column_list])**2
+		std_data = (ns_x_minus_mu+ew_x_minus_mu)*data_array
+		std_mat = self.new_sparse_matrix(std_data)
+		sigma = np.array(np.sqrt(std_mat.sum(axis=0))).flatten()
+		std_error = sigma/np.sqrt(number_matrix.sum(axis=0))
+		return np.array(std_error).flatten()

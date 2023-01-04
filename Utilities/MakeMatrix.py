@@ -1,7 +1,6 @@
 from GeneralUtilities.Compute.list import find_nearest,flat_list
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list
-from GeneralUtilities.Data.lagrangian.sose.SOSE_read import SOSEReader,aggregate_sose_list
-from GeneralUtilities.Data.lagrangian.drifter_base_class import BaseRead
+from GeneralUtilities.Data.Lagrangian.Argo.array_class import ArgoArray
+from GeneralUtilities.Data.Lagrangian.SOSE.array_class import SOSEArray
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo,WinterGeo,SummerGeo,GPSGeo,ARGOSGeo,WinterSOSEGeo,SummerSOSEGeo,SOSEGeo, SOSEWithholdingGeo, WithholdingGeo
 from TransitionMatrix.Utilities.TransMat import TransMat
 
@@ -64,7 +63,7 @@ class ProfileDict(dict):
 
 				idx_list = []
 				seconds_to_days = 1/(3600*24.)
-				diff_list = [(_-item.prof.date._list[0]).total_seconds()*seconds_to_days for _ in item.prof.date._list]
+				diff_list = [(_-item.prof.date[0]).total_seconds()*seconds_to_days for _ in item.prof.date]
 				diff_array = np.array(diff_list)
 				time_list = np.arange(0,max(diff_list),time_delta)
 				for time in time_list:
@@ -87,7 +86,7 @@ class ProfileDict(dict):
 				if not diff_check:
 					diff_check = time_delta/3.
 				seconds_to_days = 1/(3600*24.)
-				diff_list = [(_-item.prof.date._list[start_index]).total_seconds()*seconds_to_days for _ in item.prof.date._list[(start_index+1):]]
+				diff_list = [(_-item.prof.date[start_index]).total_seconds()*seconds_to_days for _ in item.prof.date[(start_index+1):]]
 				if not diff_list:
 					return None
 				closest_diff = find_nearest(diff_list,time_delta,test=False)
@@ -111,7 +110,7 @@ class ProfileDict(dict):
 		lat_bins = trans_geo.get_lat_bins()
 		lon_bins = trans_geo.get_lon_bins()
 		for wmoid,item in self.items():
-			if not item.prof.pos._list:
+			if not item.prof.pos:
 				continue
 			#get the time indexes
 			start_pos_indexes,end_pos_indexes = get_time_start_and_end_indexes(item,trans_geo)
@@ -147,11 +146,11 @@ class SeasonalDict(ProfileDict):
 	def __init__(self,all_dict,*args,**kwargs):
 		token = copy.deepcopy(all_dict)
 		for key,item in token.items():
-			month_list = [x.month for x in item.prof.date._list]
-			pos_list = item.prof.pos._list[:]
-			item.prof.pos._list = [pos for pos,month in zip(pos_list,month_list) if month in self.months]
-			item.prof.date._list = [datetime for datetime,month in zip(item.prof.date._list,month_list) if month in self.months]
-			assert len(item.prof.date._list)==len(item.prof.pos._list)
+			month_list = [x.month for x in item.prof.date]
+			pos_list = item.prof.pos[:]
+			item.prof.pos = [pos for pos,month in zip(pos_list,month_list) if month in self.months]
+			item.prof.date = [datetime for datetime,month in zip(item.prof.date,month_list) if month in self.months]
+			assert len(item.prof.date)==len(item.prof.pos)
 		super().__init__(token,*args,**kwargs)
 
 class SummerDict(SeasonalDict):
@@ -238,26 +237,28 @@ def mask_compute(start_bins,end_bins,total_list,all_dict):
 	return (row_idx,column_idx,data,total_list_holder)
 
 def withholding_calc():
-	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,WithholdingGeo),(aggregate_sose_list,SOSEReader,SOSEWithholdingGeo)]:
-		BaseRead.all_dict = []
-		agg_function()
+	for ArrayToken,GeoToken in [(ArgoArray,WithholdingGeo),(SOSEArray,SOSEWithholdingGeo)]:
+		all_dict = ArrayToken.compile() 
 		for degree_bins in [(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for percentage in [0.95,0.9,0.85,0.8,0.75,0.7]:
 				for time_step in [30,60,90,120]:
-					for k in range(10):
+					for k in range(50):
+						all_dict.bin_dict = {}
+
 						trans_geo = GeoToken(percentage,k,lat_sep=lat_sep,lon_sep=lon_sep,time_step=time_step)
 						if os.path.isfile(trans_geo.make_filename()):
 							print('file ',trans_geo.make_filename(),' already there, continuing')
 							continue
-						all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(percentage))
-						all_dict.bin_dict = {}
-						assert len(all_dict)-percentage*len(ReadToken.all_dict)<10
-						start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
-						start_bins,end_bins = zip(*all_dict.bin_dict.keys())
+						sub_dict = ProfileDict(all_dict.get_subsampled_float_dict(percentage))
+						sub_dict.bin_dict = {}
+
+						assert len(sub_dict)-percentage*len(all_dict)<10
+						start_bin_list, end_bin_list = sub_dict.space_and_time_bins(trans_geo)
+						start_bins,end_bins = zip(*sub_dict.bin_dict.keys())
 						total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
 
-						(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list)
+						(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list,sub_dict)
 						# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 						trans_geo.set_total_list([geopy.Point(x) for x in total_list])
 						transition_matrix = TransMat((data,(row_idx,column_idx)),trans_geo=trans_geo,number_data = data,rescale=True)
@@ -265,9 +266,9 @@ def withholding_calc():
 						transition_matrix.save()
 
 def base_calc():
-	for agg_function,ReadToken,GeoToken in [(aggregate_argo_list,ArgoReader,TransitionGeo),(aggregate_sose_list,SOSEReader,SOSEGeo)]:
-		BaseRead.all_dict = {}
-		agg_function()
+	for ArrayToken,GeoToken in [(ArgoArray,TransitionGeo),(SOSEArray,SOSEGeo)]:
+		all_dict = ArrayToken.compile() 
+		all_dict = ProfileDict(all_dict)
 		for degree_bins in [(1,1),(1,2),(2,2),(2,3),(3,3),(4,4),(4,6)]:
 			lat_sep,lon_sep = degree_bins
 			for time_step in [30,60,90,120,150,180]:
@@ -275,13 +276,10 @@ def base_calc():
 				if os.path.isfile(trans_geo.make_filename()):
 					print('file ',trans_geo.make_filename(),' already there, continuing')
 					continue
-				all_dict = ProfileDict(ReadToken.get_subsampled_float_dict(1))
 				all_dict.bin_dict = {}
-				assert all_dict==ReadToken.all_dict
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 				start_bins,end_bins = zip(*all_dict.bin_dict.keys())
 				total_list = list(SetToDealWithGeo.set_from_geo_list(start_bin_list+end_bin_list))
-
 				(row_idx,column_idx,data,total_list) = mask_compute(start_bins,end_bins,total_list,all_dict)
 				# col_idx,row_idx,data = pos_obj.get_trans_idx_and_numbers(trans_geo,mask)
 				trans_geo.set_total_list([geopy.Point(x) for x in total_list])
@@ -318,8 +316,7 @@ def seasonal_calc():
 
 def argos_gps_calc():
 	token_list = [(ARGOSGeo,ARGOSDict),(GPSGeo,GPSDict)]
-	BaseRead.all_dict = []
-	aggregate_argo_list()
+	argo_array = ArgoArray.compile()
 	for degree_bins in [(2,2),(2,3),(3,3),(4,4),(4,6)]:
 		lat_sep,lon_sep = degree_bins
 		for time_step in [30,60,90,120,150,180]:
@@ -328,7 +325,7 @@ def argos_gps_calc():
 				if os.path.isfile(trans_geo.make_filename()):
 					print('file ',trans_geo.make_filename(),' already there, continuing')
 					continue
-				all_dict = DictToken(ArgoReader.all_dict)
+				all_dict = DictToken(argo_array)
 				all_dict.bin_dict = {}
 				start_bin_list, end_bin_list = all_dict.space_and_time_bins(trans_geo)
 				start_bins,end_bins = zip(*all_dict.bin_dict.keys())

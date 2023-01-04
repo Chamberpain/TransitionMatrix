@@ -1,19 +1,20 @@
-from GeneralUtilities.Filepath.search import find_files
+from GeneralUtilities.Data.Filepath.search import find_files
 import os
-data_file_name = os.getenv("HOME")+'/Data/Raw/GOSHIP'
+from GeneralUtilities.Data.Filepath.instance import get_data_folder
 import pandas as pd
 from TransitionMatrix.Utilities.TransMat import TransMat
 import geopy
 import numpy
 import scipy.sparse
 import matplotlib.pyplot as plt
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 from TransitionMatrix.Utilities.Utilities import colorline
 import numpy as np
 import cartopy.crs as ccrs
 import matplotlib.colors
 
+data_file_name = get_data_folder()+'/Raw/GOSHIP/'
 
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 time_dict = {'I05':1,'A12':1,'SR04':1,'A13.5':1,'P02':1,'MED01':1,'P04':1,'I09':2,'I08':2,'A16':2,'P16':3,'P15':3,'S04P':4,'ARC01':4,'P06':5}

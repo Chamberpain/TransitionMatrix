@@ -9,7 +9,7 @@ import scipy.sparse
 import matplotlib.pyplot as plt
 import geopy
 import copy
-
+import csv
 
 class Float(scipy.sparse.csc_matrix):
 	traj_file_type = 'float'
@@ -89,6 +89,7 @@ class Float(scipy.sparse.csc_matrix):
 		bin_list = FloatClass.get_recent_bins(lat_bins,lon_bins)
 		date_mask =[max(recent_date_list)-datetime.timedelta(days=270)<x for x in recent_date_list]
 		age_list = [(max(recent_date_list)-x).days for x in deployment_date_list]
+		type_mask = [x==cls.traj_file_type for x in FloatClass.get_suite_list()]
 		for variable in GeoClass.variable_list:
 			float_var = GeoClass.variable_translation_dict[variable]
 			sensor_list = FloatClass.get_sensors()
@@ -111,7 +112,6 @@ class Float(scipy.sparse.csc_matrix):
 		trans_geo = copy.deepcopy(self.trans_geo)
 		trans_geo.variable_list = [row_var]
 		return BGC(split_array,split_array.shape,trans_geo=trans_geo)
-
 
 class Core(Float):
 	traj_file_type = 'Core'

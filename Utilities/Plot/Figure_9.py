@@ -2,7 +2,7 @@ from TransitionMatrix.Utilities.TransMat import TransMat
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 import matplotlib.pyplot as plt
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 import scipy
 import numpy as np 
 import cartopy.crs as ccrs
@@ -36,5 +36,6 @@ for k,point in enumerate(trans_mat.trans_geo.total_list):
 	lats = [point.latitude + x for x in ns_holder]
 	lc = colorline(lons,lats,ax)
 plt.colorbar(lc,label='Days Since Deployment')
+plt.tight_layout()
 plt.savefig(file_handler.out_file('figure_9'))
 plt.close()

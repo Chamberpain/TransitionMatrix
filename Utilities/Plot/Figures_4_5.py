@@ -1,10 +1,11 @@
 import geopy
 from TransitionMatrix.Utilities.TransMat import TransMat
+from TransitionMatrix.Utilities.TransPlot import TransPlot
 from GeneralUtilities.Compute.constants import degree_dist
 import matplotlib.pyplot as plt
 from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.list import GeoList
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo,SOSEGeo
 import pickle
@@ -14,6 +15,8 @@ import cartopy.crs as ccrs
 plt.rcParams['font.size'] = '16'
 plot_color_dict = {(1,1):'teal',(1,2):'brown',(2,2):'red',(2,3):'blue',(3,3):'yellow',(4,4):'orange',(4,6):'green'}
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
+scale = 1.6
+size_scale = 1.6
 
 def distribution_and_mean_of_column(self,geo_point,pad = 6,ax=False):
 	from GeneralUtilities.Plot.Cartopy.eulerian_plot import PointCartopy
@@ -21,8 +24,8 @@ def distribution_and_mean_of_column(self,geo_point,pad = 6,ax=False):
 	mean = self.mean_of_column(geo_point)
 	XX,YY,ax = PointCartopy(self.trans_geo.total_list[col_idx],lat_grid = self.trans_geo.get_lat_bins(),lon_grid = self.trans_geo.get_lon_bins(),pad=pad,ax=ax).get_map()
 	ax.pcolormesh(XX,YY,self.trans_geo.transition_vector_to_plottable(np.array(self[:,col_idx].todense()).flatten()),cmap='Blues')
-	ax.scatter(mean.longitude,mean.latitude,c='pink',linewidths=10,marker='x',s=160,zorder=10)
-	ax.scatter(geo_point.longitude,geo_point.latitude,c='red',linewidths=10,marker='x',s=160,zorder=10)
+	ax.scatter(mean.longitude,mean.latitude,c='orange',linewidths=10/scale,marker='x',s=160*size_scale,zorder=10)
+	ax.scatter(geo_point.longitude,geo_point.latitude,c='red',linewidths=10/scale,marker='x',s=160*size_scale,zorder=10)
 
 TransMat.distribution_and_mean_of_column = distribution_and_mean_of_column
 
@@ -130,10 +133,10 @@ def figure_4():
 
 			out = degree_dist*np.sqrt(ew_mean_diff_holder**2+ns_mean_diff_holder**2)
 			print('I am plotting ',system)
-			ax3.plot(np.unique(time),out,color=plot_color_dict[grid],label=str(grid))
+			ax3.plot(np.unique(time),out,color=plot_color_dict[grid],label=r'$%s^\circ\times%s^\circ$'%(grid[0],grid[1]))
 			ax3.scatter(np.unique(time),out,color=plot_color_dict[grid])
 			out = degree_dist*np.sqrt(ew_std_diff_holder**2+ns_std_diff_holder**2)
-			ax4.plot(np.unique(time),out,color=plot_color_dict[grid],label=str(grid))
+			ax4.plot(np.unique(time),out,color=plot_color_dict[grid],label=r'$%s^\circ\times%s^\circ$'%(grid[0],grid[1]))
 			ax4.scatter(np.unique(time),out,color=plot_color_dict[grid])
 	ax3.set_xlim(28,122)
 	ax4.set_xlim(28,122)
@@ -151,8 +154,6 @@ def figure_4():
 	plt.subplots_adjust(hspace=0.35)
 	plt.savefig(file_handler.out_file('figure_4'))
 	plt.close()
-
-
 
 def resolution_bias_plot():
 	loc = geopy.Point(-54,-40)
@@ -175,10 +176,10 @@ def resolution_bias_plot():
 	pdf = small_mat.trans_geo.transition_vector_to_plottable(sum(pdf_list)/4)
 	ax1.pcolormesh(XX,YY,pdf,cmap='Blues')
 	x_mean,y_mean = zip(*[(x.longitude,x.latitude) for x in mean_list])
-	ax1.scatter(x_mean,y_mean,c='black',linewidths=5,marker='x',s=80,zorder=10)
-	ax1.scatter(np.mean(x_mean),np.mean(y_mean),c='pink',linewidths=8,marker='x',s=120,zorder=10)
+	ax1.scatter(x_mean,y_mean,c='lime',linewidths=5/scale,marker='x',s=80*size_scale,zorder=10)
+	ax1.scatter(np.mean(x_mean),np.mean(y_mean),c='orange',linewidths=8/scale,marker='x',s=120*size_scale,zorder=10)
 	start_lat,start_lon = zip(*reduced_loc_list)
-	ax1.scatter(start_lon,start_lat,c='red',linewidths=5,marker='x',s=80,zorder=10)
+	ax1.scatter(start_lon,start_lat,c='red',linewidths=5/scale,marker='x',s=80*size_scale,zorder=10)
 	ax2 = fig.add_subplot(2,2,2, projection=ccrs.PlateCarree())
 	big_mat.distribution_and_mean_of_column(loc,ax=ax2,pad=25)
 	ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
@@ -203,7 +204,7 @@ def resolution_bias_plot():
 			error_holder = np.array(error)[mask]
 			plot_mean.append(error_holder.mean())
 			plot_std.append(error_holder.std())
-		ax3.plot(time_axis,plot_mean,label=str((lat_holder,lon_holder)),color=plot_color_dict[(lat_holder,lon_holder)])
+		ax3.plot(time_axis,plot_mean,label=r'$%s^\circ\times%s^\circ$'%(lat_holder,lon_holder),color=plot_color_dict[(lat_holder,lon_holder)])
 		ax3.scatter(time_axis,plot_mean,c=plot_color_dict[(lat_holder,lon_holder)])
 	ax4 = fig.add_subplot(2,2,4)
 	with open(file_handler.tmp_file('resolution_standard_error'), 'rb') as fp:
@@ -223,7 +224,7 @@ def resolution_bias_plot():
 			std_holder = np.array(std)[mask]
 			plot_mean.append(error_holder[0])
 			plot_std.append(std_holder[0])
-		ax4.plot(time_axis,plot_mean,label=str((lat_holder,lon_holder)),color=plot_color_dict[(lat_holder,lon_holder)])
+		ax4.plot(time_axis,plot_mean,label=r'$%s^\circ\times%s^\circ$'%(lat_holder,lon_holder),color=plot_color_dict[(lat_holder,lon_holder)])
 		ax4.scatter(time_axis,plot_mean,c=plot_color_dict[(lat_holder,lon_holder)])
 	ax4.set_xlabel('Timestep (days)')
 	ax3.set_xlabel('Timestep (days)')

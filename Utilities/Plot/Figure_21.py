@@ -3,7 +3,7 @@ from TransitionMatrix.Utilities.TransMat import TransMat
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo,SOSEGeo
 from TransitionMatrix.Utilities.Utilities import figure_20_matrix_compare
 import cartopy.crs as ccrs
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')

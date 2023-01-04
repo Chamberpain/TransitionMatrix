@@ -5,7 +5,7 @@ from TransitionMatrix.Utilities.TransMat import TransMat
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 import matplotlib.pyplot as plt
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 import cartopy.crs as ccrs
 from pyproj import Geod
 import scipy.sparse

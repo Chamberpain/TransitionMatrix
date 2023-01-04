@@ -1,6 +1,6 @@
 import numpy as np
 import geopy
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list,full_argo_list
+from GeneralUtilities.Data.Lagrangian.Argo.array_class import ArgoArray
 from TransitionMatrix.Utilities.ArgoData import Core
 from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 from TransitionMatrix.Utilities.TransMat import TransMat
@@ -10,14 +10,14 @@ from TransitionMatrix.Utilities.TransMat import TransMat
 import matplotlib.pyplot as plt
 import matplotlib
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.constants import degree_dist
 import scipy
 from TransitionMatrix.Utilities.Utilities import colorline,get_cmap,shiftgrid
 
 
 plt.rcParams['font.size'] = '16'
-full_argo_list()
+argo_array = ArgoArray.compile()
 trans_mat = TransMat.load_from_type(lat_spacing=2,lon_spacing=2,time_step=90)
 file_handler = FilePathHandler(ROOT_DIR,'ArgoMap')
 plot_handler = FilePathHandler(ROOT_DIR,'final_figures')
@@ -58,7 +58,7 @@ def get_current_state_dist():
 	try:
 		dist_array = np.load(file_handler.out_file('current_state.npy'))
 	except FileNotFoundError:	
-		float_pos_list = Core.recent_pos_list(ArgoReader)
+		float_pos_list = Core.recent_pos_list(argo_array)
 		XX,YY,coord_list = get_dimensions()
 		dist_list = []
 		for n,coord in enumerate(coord_list):
@@ -76,7 +76,7 @@ def get_future_state_dist(trans_mat,time_step):
 		dist_array = np.load(file_handler.out_file('future_state_'+str(time_step)+'.npy'))
 	except FileNotFoundError:
 		trans_holder = trans_mat.multiply(time_step,value=0.00001)
-		float_mat = Core.recent_floats(trans_mat.trans_geo, ArgoReader,days_delta=(90*time_step))
+		float_mat = Core.recent_floats(trans_mat.trans_geo, argo_array,days_delta=(90*time_step))
 		XX,YY,coord_list = get_dimensions()
 		obs_out = scipy.sparse.csc_matrix(trans_holder).dot(float_mat.get_sensor('so'))
 
@@ -110,12 +110,12 @@ XX,YY,coord_list = get_dimensions()
 fig = plt.figure(figsize=(18,14))
 ax1 = fig.add_subplot(2,1,1, projection=ccrs.PlateCarree())
 dummy,dummy,ax1 = trans_mat.trans_geo.plot_setup(ax=ax1)
-pcm = ax1.pcolormesh(XX,YY,-current_dist_array,cmap=cmap,vmin=-2,vmax=2)
+pcm = ax1.pcolormesh(XX,YY,-current_dist_array,cmap=cmap,vmin=-2,vmax=2,zorder=0)
 ax1.annotate('a', xy = (0.17,0.9),xycoords='axes fraction',zorder=11,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 
 ax2 = fig.add_subplot(2,1,2, projection=ccrs.PlateCarree())
 dummy,dummy,ax2 = trans_mat.trans_geo.plot_setup(ax=ax2)
-ax2.pcolormesh(XX,YY,-one_year_dist_array,cmap=cmap,vmin=-2,vmax=2)
+ax2.pcolormesh(XX,YY,-one_year_dist_array,cmap=cmap,vmin=-2,vmax=2,zorder=0)
 ax2.annotate('b', xy = (0.17,0.9),xycoords='axes fraction',zorder=11,size=32,bbox=dict(boxstyle="round", fc="0.8"),)
 
 cbar = fig.colorbar(pcm,ax=[ax1,ax2],pad=.05,label='Nominal Coverage',location='right')

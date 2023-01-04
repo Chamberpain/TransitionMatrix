@@ -2,10 +2,9 @@ import matplotlib.pyplot as plt
 import numpy as np
 import matplotlib.colors
 from GeneralUtilities.Compute.list import VariableList
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list,full_argo_list
 from TransitionMatrix.Utilities.ArgoData import Core,BGC
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Lagrangian.Argo.array_class import ArgoArray
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 from TransitionMatrix.Utilities.TransMat import TransMat
 import cartopy.crs as ccrs
@@ -18,7 +17,7 @@ plt.rcParams['font.size'] = '26'
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
 cmap = get_cmap()	
-full_argo_list()
+argo_array = ArgoArray.compile() 
 trans_mat = TransMat.load_from_type(lat_spacing=2,lon_spacing=2,time_step=90)
 
 ew_data_list = []
@@ -35,7 +34,7 @@ trans_mat.trans_geo.variable_list = VariableList(['thetao','so','ph','chl','o2']
 trans_mat.trans_geo.variable_translation_dict = {'thetao':'TEMP','so':'PSAL','ph':'PH_IN_SITU_TOTAL','chl':'CHLA','o2':'DOXY'}
 
 total_obs = [trans_mat.multiply(x,value=0.00001) for x in [4,8]]
-float_list = [Core.recent_floats(trans_mat.trans_geo, ArgoReader,days_delta=(90*x)) for x in [4,8]]
+float_list = [Core.recent_floats(trans_mat.trans_geo, argo_array,days_delta=(90*x)) for x in [4,8]]
 
 var = 'so'
 i = 1

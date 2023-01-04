@@ -1,8 +1,10 @@
 import matplotlib.pyplot as plt
 from TransitionMatrix.Utilities.TransMat import TransMat
 from TransitionMatrix.Utilities.TransGeo import ARGOSGeo,GPSGeo
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
+import cartopy.crs as ccrs
+import numpy as np
 
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
 

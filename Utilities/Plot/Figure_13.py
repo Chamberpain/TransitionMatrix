@@ -2,62 +2,61 @@ from TransitionMatrix.Utilities.ArgoData import BGC as SOCCOM
 from TransitionMatrix.Utilities.ArgoData import Core as Argo
 from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
 from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
-from GeneralUtilities.Data.lagrangian.bgc.bgc_read import BGCReader
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader
+from GeneralUtilities.Data.Lagrangian.Argo.argo_read import ArgoReader
+from GeneralUtilities.Data.Lagrangian.Argo.array_class import ArgoArray
 import datetime
 import numpy as np 
-from GeneralUtilities.Data.lagrangian.argo.argo_read import full_argo_list
 import scipy
 from TransitionMatrix.Utilities.TransMat import TransMat
 import matplotlib.pyplot as plt
 import cartopy.crs as ccrs
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
 
 file_handler = FilePathHandler(ROOT_DIR,'final_figures')
-
-full_argo_list()
-
-def recent_bins_by_sensor(variable,lat_bins,lon_bins,float_type):
-	date_list = BGCReader.get_recent_date_list()
-	bin_list = BGCReader.get_recent_bins(lat_bins,lon_bins)
-	sensor_list = BGCReader.get_sensors()
-	sensor_mask = [variable in x for x in sensor_list]
-	date_mask =[max(date_list)-datetime.timedelta(days=180)<x for x in date_list]
-	if float_type == 'BGC':
-		soccom_mask = ['SOCCOM' in x.meta.project_name for dummy,x in BGCReader.all_dict.items()]
-		mask = np.array(sensor_mask)&np.array(date_mask)&np.array(soccom_mask)
-	else:
-		mask = np.array(sensor_mask)&np.array(date_mask)
-
-	age_list = [(x.prof.date._list[-1]-x.prof.date._list[0]).days/365. for x in BGCReader.all_dict.values()]
-	return (np.array(bin_list)[mask],1/(np.ceil(age_list)+1)[mask])
+argo_array = ArgoArray.compile()
 
 def recent_floats(cls,GeoClass, FloatClass):
 	out_list = []
 	for variable in GeoClass.variable_list:
 		float_var = GeoClass.variable_translation_dict[variable]
-		var_grid,age_list = recent_bins_by_sensor(float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins(),cls.traj_file_type)
+
+		variable,lat_bins,lon_bins,float_type = (float_var,GeoClass.get_lat_bins(),GeoClass.get_lon_bins(),cls.traj_file_type)
+		date_list = argo_array.get_recent_date_list()
+		bin_list = argo_array.get_recent_bins(lat_bins,lon_bins)
+		sensor_list = argo_array.get_sensors()
+		sensor_mask = [variable in x for x in sensor_list]
+		date_mask =[max(date_list)-datetime.timedelta(days=180)<x for x in date_list]
+		if float_type == 'BGC':
+			soccom_mask = ['SOCCOM' in x.meta.project_name for dummy,x in argo_array.items()]
+			mask = np.array(sensor_mask)&np.array(date_mask)&np.array(soccom_mask)
+		else:
+			mask = np.array(sensor_mask)&np.array(date_mask)
+
+		age_list = [(x.prof.date[-1]-x.prof.date[0]).days/365. for x in argo_array.values()]
+
+		var_grid,age_list = (np.array(bin_list)[mask],1/(np.ceil(age_list)+1)[mask])
 		idx_list = [GeoClass.total_list.index(x) for x in var_grid if x in GeoClass.total_list]
 		holder_array = np.zeros([len(GeoClass.total_list),1])
 		for k,idx in enumerate(idx_list):
 			holder_array[idx]+=age_list[k]
 		out_list.append(holder_array)
-	out = np.vstack(out_list)
+	out = np.hstack([out_list[0]]).max(axis=1)
+	out = out.reshape(out.shape[0],1)
 	return cls(out,trans_geo=GeoClass)
 
 
 traj_class_1 = TransMat.load_from_type(lat_spacing=4,lon_spacing=4,time_step=180)
 traj_class_1.trans_geo.plot_class = SOSECartopy
-traj_class_1.trans_geo.variable_list = ['so']
+traj_class_1.trans_geo.variable_list = ['ph','chl','o2']
 traj_class_1.trans_geo.variable_translation_dict = {'thetao':'TEMP','so':'PSAL','ph':'PH_IN_SITU_TOTAL','chl':'CHLA','o2':'DOXY'}
-float_vector_1 = recent_floats(SOCCOM,traj_class_1.trans_geo, BGCReader)
+float_vector_1 = recent_floats(SOCCOM,traj_class_1.trans_geo, argo_array)
 
 traj_class_2 = TransMat.load_from_type(lat_spacing=2,lon_spacing=2,time_step=180)
 traj_class_2.trans_geo.plot_class = GlobalCartopy
 traj_class_2.trans_geo.variable_list = ['so']
 traj_class_2.trans_geo.variable_translation_dict = {'thetao':'TEMP','so':'PSAL','ph':'PH_IN_SITU_TOTAL','chl':'CHLA','o2':'DOXY'}
-float_vector_2 = recent_floats(Argo,traj_class_2.trans_geo, ArgoReader)
+float_vector_2 = recent_floats(Argo,traj_class_2.trans_geo, argo_array)
 
 fig = plt.figure(figsize=(14,14))
 ax1 = fig.add_subplot(2,1,1, projection=ccrs.SouthPolarStereo())
