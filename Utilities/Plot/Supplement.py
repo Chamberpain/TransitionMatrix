@@ -1,18 +1,18 @@
-from GeneralUtilities.Data.lagrangian.argo.argo_read import ArgoReader,aggregate_argo_list,full_argo_list
-from GeneralUtilities.Data.lagrangian.bgc.bgc_read import BGCReader
-from TransitionMatrix.Utilities.Compute.trans_read import TransMat,TransitionGeo
+from GeneralUtilities.Data.Lagrangian.Argo.argo_read import ArgoReader
+from TransitionMatrix.Utilities.TransMat import TransMat
+from TransitionMatrix.Utilities.TransGeo import TransitionGeo
 import matplotlib.pyplot as plt
 from TransitionMatrix.Utilities.Plot.__init__ import ROOT_DIR
-from TransitionMatrix.Utilities.Plot.transition_matrix_plot import TransPlot
-from GeneralUtilities.Filepath.instance import FilePathHandler
+from TransitionMatrix.Utilities.__init__ import ROOT_DIR as DATA_DIR
+from TransitionMatrix.Utilities.TransPlot import TransPlot
+from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 import cartopy.crs as ccrs
-from TransitionMatrix.Utilities.Plot.argo_data import Core,BGC
-from TransitionMatrix.Utilities.Inversion.target_load import InverseGeo,InverseInstance,HInstance,InverseCCS,InverseGOM,InverseSOSE
+from TransitionMatrix.Utilities.ArgoData import Core,BGC
 import scipy
 import numpy as np 
 
 plt.rcParams['font.size'] = '16'
-file_handler = FilePathHandler(ROOT_DIR,'final_figures')
+plot_handler = FilePathHandler(ROOT_DIR,'final_figures')
 
 
 
@@ -442,6 +442,7 @@ def seasonal_plot():
 
 
 def data_withholding_plot():
+	data_handler = FilePathHandler(DATA_DIR,'transmat_withholding')
 	plot_color_dict = {0.95:'teal',0.9:'red',0.85:'blue',0.8:'yellow',0.75:'orange',0.7:'green'}
 	plt.rcParams['font.size'] = '16'
 	with open(data_handler.tmp_file('transition_matrix_withholding_data'), 'rb') as fp:
@@ -449,13 +450,19 @@ def data_withholding_plot():
 	fp.close()
 	ew_mean_diff,ns_mean_diff,ew_std_diff,ns_std_diff,lat,lon,time,descriptor = zip(*datalist)
 	pos_type,percentage = zip(*descriptor)
-
-	for system in ['argo','SOSE']:
-		fig = plt.figure(figsize=(9,8))
-		ax1 = fig.add_subplot(2,1,1)
-		ax2 = fig.add_subplot(2,1,2)
+	for k,system in enumerate(['argo','SOSE']):
+		fig = plt.figure(figsize=(12,12))
+		print('system  is ',system)
+		plt.xlim(28,92)
+		ticks = [30,60,90]
+		plt.xticks(ticks)
+		plt.xlabel('Timestep (days)')
+		plt.ylabel('Mean Difference (km)')
+		mean_results_list = []
+		std_results_list = []
 		for grid in [(2,2)]:
-			for percent in np.unique(percentage):
+			for k,percent in enumerate(np.unique(percentage)):
+				print('percent is ',percent)
 				time_list = []
 				mean_mean_list = []
 				mean_std_list = []
@@ -473,35 +480,21 @@ def data_withholding_plot():
 					ew_mean_diff_holder = np.array(ew_mean_diff)[mask]
 					ns_mean_diff_holder = np.array(ns_mean_diff)[mask]
 
-					out = np.sqrt(ew_mean_diff_holder**2+ns_mean_diff_holder**2)
-					mean_mean_list.append(out.mean())
-					mean_std_list.append(out.std())
+					mean_out = np.sqrt(ew_mean_diff_holder.mean()**2+ns_mean_diff_holder.mean()**2)*111
+					print('mean out is ',mean_out)
+					std_out = np.sqrt(ew_mean_diff_holder.std()**2+ns_mean_diff_holder.std()**2)*111
+					print('std out is ',std_out)
 
-					ew_std_diff_holder = np.array(ew_std_diff)[mask]
-					ns_std_diff_holder = np.array(ns_std_diff)[mask]
-					out = np.sqrt(ew_std_diff_holder**2+ns_std_diff_holder**2)
+					mean_mean_list.append(mean_out)
+					mean_std_list.append(std_out)
 
-					std_mean_list.append(out.mean())
-					std_std_list.append(out.std())
+				mean_results_list.append(mean_mean_list)
+				std_results_list.append(mean_std_list)
+				plt.errorbar([t+0.2*k-0.5 for t in time_list],mean_mean_list,yerr=mean_std_list,linestyle=plot_style_dict[system],color=plot_color_dict[percent],label=str(percent*100)+'%')
+				plt.scatter(time_list,mean_mean_list,color=plot_color_dict[percent])
 
-
-				ax1.errorbar(time_list,mean_mean_list,yerr=mean_std_list,linestyle=plot_style_dict[system],color=plot_color_dict[percent],label=percent)
-				ax1.scatter(time_list,mean_mean_list,color=plot_color_dict[percent])
-
-				ax2.errorbar(time_list,std_mean_list,yerr=std_std_list,linestyle=plot_style_dict[system],color=plot_color_dict[percent],label=percent)
-				ax2.scatter(time_list,std_mean_list,color=plot_color_dict[percent])
-		ax1.set_xlim(28,92)
-		ax2.set_xlim(28,92)
-		ticks = [30,60,90]
-		ax1.set_xticks(ticks)
-		ax2.set_xticks(ticks)
-		ax2.set_xlabel('Timestep')
-		ax1.set_ylabel('Mean Difference')
-		ax2.set_ylabel('Mean Difference')
-		ax1.legend(loc='upper center', bbox_to_anchor=(0.5, 1.3),
+		plt.legend(loc='upper center',
 	          ncol=3, fancybox=True, shadow=True)
-		ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
-		ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=10,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 		plt.savefig(plot_handler.out_file(system+'_data_withholding_plot'))
 		plt.close()
 
