@@ -1,5 +1,9 @@
-from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
-from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
+# from GeneralUtilities.Plot.Cartopy.eulerian_plot import GlobalCartopy
+class GlobalCartopy():
+	pass
+# from GeneralUtilities.Plot.Cartopy.regional_plot import SOSECartopy
+class SOSECartopy():
+	pass
 from GeneralUtilities.Data.Filepath.instance import FilePathHandler
 from GeneralUtilities.Compute.list import find_nearest,flat_list,LonList,LatList,GeoList
 import numpy as np

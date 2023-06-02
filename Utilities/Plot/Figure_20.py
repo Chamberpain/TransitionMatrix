@@ -38,6 +38,6 @@ ax2.pcolor(XX,YY,gps_class.trans_geo.transition_vector_to_plottable(plottable)*1
 ax1.annotate('a', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 ax2.annotate('b', xy = (0.1,0.9),xycoords='axes fraction',zorder=11,size=22,bbox=dict(boxstyle="round", fc="0.8"),)
 PCM = ax2.get_children()[3]
-fig.colorbar(PCM,ax=[ax1,ax2],label='Argo Density (%)',fraction=0.10)
+fig.colorbar(PCM,ax=[ax1,ax2],label='Chance of Float                  (%)',fraction=0.10)
 plt.savefig(file_handler.out_file('figure_20'))
 plt.close()
