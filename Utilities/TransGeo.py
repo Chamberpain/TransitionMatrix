@@ -10,7 +10,9 @@ import numpy as np
 import geopy
 import matplotlib.colors
 from TransitionMatrix.Utilities.__init__ import ROOT_DIR
-import cartopy.crs as ccrs
+# import cartopy.crs as ccrs
+class ccrs():
+	pass
 
 file_handler = FilePathHandler(ROOT_DIR,'TransMat')
 
